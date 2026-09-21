@@ -21,7 +21,10 @@ uv sync --dev
 uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The API health check is available at <http://127.0.0.1:8000/api/health>.
+The health check is available at <http://127.0.0.1:8000/api/health>. The Phase 4
+data endpoints are `GET /api/schema`, `POST /api/query`, and `POST /api/facets`;
+their contract is documented in
+[`docs/implementation/query-api.md`](docs/implementation/query-api.md).
 
 ## Set up the frontend
 

@@ -164,6 +164,15 @@ Acceptance targets on the intended machine:
 
 ## Phase 4 — Build the query API
 
+**Status: complete (2026-09-22).** The backend now exposes a 150-field schema
+registry plus validated query and facet endpoints. It supports type-aware
+nested filter groups, normalized collection membership, bound values,
+projection-only reads, deterministic null-aware cursor pagination, a five-second
+query timeout, and one structured error envelope. Tests cover injection attempts,
+null semantics, cursor ties, malformed requests, and database availability. A
+full-dataset smoke test verified filtered pages and facets in about 0.02 seconds
+per request. See [Query API](query-api.md).
+
 Implement a schema registry describing each exposed column:
 
 ```text

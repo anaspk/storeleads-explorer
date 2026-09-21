@@ -20,6 +20,8 @@ records from the full Store Leads CSV.
   project layout, API outline, and acceptance criteria.
 - [Query benchmark](implementation/query-benchmark.md) — Phase 3 cold/warm
   query and direct-export timings from the complete imported dataset.
+- [Query API](implementation/query-api.md) — Phase 4 endpoint contract, filter
+  operators, cursor behavior, limits, errors, and verification.
 
 ## Current project state
 
@@ -34,6 +36,8 @@ records from the full Store Leads CSV.
 - Phase 2 provides repeatable, validated, atomic DuckDB ingestion.
 - Phase 3 provides a repeatable representative-query benchmark; all measured
   interactive cases met the latency target on the intended machine.
+- Phase 4 provides schema, query, and facet endpoints with strict allowlists,
+  bound values, deterministic cursor pagination, and structured errors.
 
 ## Current recommendation in one sentence
 

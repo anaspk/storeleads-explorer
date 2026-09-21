@@ -58,3 +58,38 @@ uv run python -m app.cli benchmark \
 not require privileged operating-system cache eviction. Export benchmarks use
 DuckDB `COPY` into temporary files, record file size and the process peak-RSS
 delta, and delete the files after each measurement.
+
+## Query the imported data
+
+Phase 4 adds `GET /api/schema`, `POST /api/query`, and `POST /api/facets`. Start
+the server after importing the database, then inspect the schema registry at
+<http://127.0.0.1:8000/api/schema> or the interactive API documentation at
+<http://127.0.0.1:8000/docs>.
+
+The server reads `../data/storeleads.duckdb` by default. Override it when
+needed:
+
+```bash
+STORELEADS_DATABASE=/absolute/path/to/storeleads.duckdb \
+  uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Example query:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/query \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "columns": ["domain", "country_code", "estimated_monthly_visits"],
+    "filters": [
+      {"column": "country_code", "operator": "in", "value": ["US", "CA"]}
+    ],
+    "sort": [
+      {"column": "estimated_monthly_visits", "direction": "desc"}
+    ],
+    "limit": 100
+  }'
+```
+
+Treat `next_cursor` as opaque and resend it with the same sort. The complete
+contract is documented in [Query API](../docs/implementation/query-api.md).
