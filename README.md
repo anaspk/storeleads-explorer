@@ -55,3 +55,14 @@ project notes. Other CSV files, DuckDB databases, Parquet files, temporary
 files, and generated exports are intentionally ignored by Git. Keep the full
 source dataset outside version control.
 
+Build the local database from the profiled source with:
+
+```bash
+cd backend
+uv run python -m app.cli import-csv \
+  /Users/muhammadanas/projects/storeleads-clone-misc/storeleads-woo-all-WORKING.csv \
+  --database ../data/storeleads.duckdb
+```
+
+The importer only reads the CSV and atomically activates a separately built and
+validated DuckDB database.

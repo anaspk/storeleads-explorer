@@ -22,3 +22,21 @@ uv run python scripts/profile_csv.py /path/to/storeleads.csv \
 
 Scratch data is removed after the run. Reports under `data/` are intentionally
 ignored by Git because they can contain source-derived values.
+
+## Import the profiled CSV
+
+The Phase 2 importer validates the exact profiled schema, stages and transforms
+the source, creates normalized collection tables, records import metadata, and
+only then atomically activates the new database:
+
+```bash
+uv run python -m app.cli import-csv \
+  /Users/muhammadanas/projects/storeleads-clone-misc/storeleads-woo-all-WORKING.csv \
+  --database ../data/storeleads.duckdb \
+  --memory-limit 4GB
+```
+
+The source CSV is read-only. Malformed rows are not skipped. Failed type or
+money conversions, schema drift, a domain invariant failure, or a formerly
+empty omitted column becoming populated aborts the import and leaves any
+existing database untouched.

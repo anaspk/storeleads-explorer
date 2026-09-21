@@ -11,6 +11,9 @@ records from the full Store Leads CSV.
 - [Complete CSV profile](data/full-profile.md) — Phase 1 results from all
   4,053,656 source rows, including confirmed types, identity rules, money
   parsing, and collection delimiters.
+- [Ingestion schema decisions](data/ingestion-schema.md) — Phase 2 schema,
+  validation, and atomic-activation rules, including why 17 empty source fields
+  are omitted.
 - [Architecture recommendation](architecture/recommendation.md) — recommended
   stack, database choice, query model, and alternatives.
 - [Implementation roadmap](implementation/roadmap.md) — phased plan, suggested
@@ -26,8 +29,7 @@ records from the full Store Leads CSV.
   scaffolded, runnable, and covered by baseline quality checks.
 - Phase 1 is complete: a repeatable profiler scanned the complete CSV and
   produced dated JSON and Markdown reports.
-- No application database has been created yet; repeatable ingestion begins in
-  Phase 2.
+- Phase 2 provides repeatable, validated, atomic DuckDB ingestion.
 
 ## Current recommendation in one sentence
 
@@ -62,7 +64,6 @@ sorting, pagination, faceting, and CSV generation performed on the server.
 
 1. Which columns and filter combinations are used most frequently.
 2. Search semantics for columns other than `title`, `description`, and `domain`.
-3. The eventual types of seventeen columns that are completely empty in this
-   source version.
 
-These are not blockers for repeatable ingestion.
+The 17 completely empty source columns are omitted during ingestion. If a later
+source populates one, import stops so its type can be decided from evidence.

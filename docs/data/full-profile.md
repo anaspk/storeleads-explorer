@@ -22,7 +22,7 @@ unchanged across the run.
 | Parser rejections | 0 |
 | UTF-8 valid | yes |
 | UTF-8 BOM | no |
-| Full profiling runtime | 106.04 seconds |
+| Full profiling runtime | 99.66 seconds |
 | DuckDB version | 1.5.5 |
 | Configured memory limit | 4 GB |
 
@@ -35,8 +35,8 @@ The complete dated artifacts are local and intentionally ignored by Git because
 they include representative source-derived values:
 
 ```text
-data/profiles/storeleads-profile-20260921T222016Z.json
-data/profiles/storeleads-profile-20260921T222016Z.md
+data/profiles/storeleads-profile-20260921T222754874459Z.json
+data/profiles/storeleads-profile-20260921T222754874459Z.md
 ```
 
 ## Domain identity
@@ -70,9 +70,10 @@ Every column has an explicit proposed type in the machine-readable report.
 No value failed conversion to its proposed `BIGINT`, `BOOLEAN`, `DATE`, or
 `DOUBLE` type.
 
-Seventeen columns are entirely empty in this source and therefore remain
-conservatively typed as `VARCHAR` until a later source version supplies
-evidence:
+Seventeen columns are entirely empty in this source. Phase 2 omits them from
+the application database and fails an import if a later source populates any of
+them. See [Ingestion Schema Decisions](ingestion-schema.md) for the rationale
+and migration rule:
 
 - `average_product_price`
 - `average_product_price_usd`
@@ -157,7 +158,8 @@ defined.
 - Build one child table for each confirmed collection above.
 - Apply the URL-aware rule for `installed_apps`.
 - Retain the eleven reviewed non-collection fields as scalar text.
+- Do not create database fields for the 17 entirely empty source columns. Fail
+  validation if any becomes populated so the new data can be profiled and a
+  type can be chosen deliberately.
 - Fail validation if a later source changes domain uniqueness, introduces a new
-  currency, causes a typed conversion failure, or populates a currently empty
-  column with values that do not fit its eventual schema.
-
+  currency, or causes a typed conversion failure.

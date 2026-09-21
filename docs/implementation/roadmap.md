@@ -52,7 +52,7 @@ license and sensitivity permit committing it.
 ## Phase 1 — Profile the complete CSV
 
 **Status: complete (2026-09-22).** The repeatable read-only profiler scanned
-4,053,656 rows and 162 columns in 106.04 seconds, with no parser rejections or
+4,053,656 rows and 162 columns in 99.66 seconds, with no parser rejections or
 typed-conversion failures. It confirmed exact `domain` uniqueness, validated
 both money fields across the full source, documented collection split rules,
 and produced dated JSON and Markdown reports. See
@@ -84,7 +84,16 @@ silently ignore parse errors.
 
 ## Phase 2 — Implement repeatable ingestion
 
-Create a command resembling:
+**Status: complete (2026-09-22).** The importer validates the exact profiled
+schema, source/destination paths, and disk headroom; stages the CSV with strict
+parsing; applies the profiled types; omits and guards the 17 entirely empty
+fields; derives stable IDs and typed money fields; builds and validates all 12
+collection tables; records metadata and conversion results; and atomically
+activates the database. The full source imported with no row loss or conversion
+failures, and a second full run produced the same row counts and stable-ID
+fingerprint. See [Ingestion Schema Decisions](../data/ingestion-schema.md).
+
+The implemented command is:
 
 ```text
 python -m app.cli import-csv /path/to/full.csv \
