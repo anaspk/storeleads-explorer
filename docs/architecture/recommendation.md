@@ -95,10 +95,13 @@ The initial search contract is:
 Do not implement an unqualified substring search across all 162 columns. It
 would be expensive and produce low-quality results.
 
-The initial full-text index should cover `title` and `description`. Domain search
-should use substring semantics independently of that index. DuckDB full-text
-indexes do not update automatically, so rebuild the index after each dataset
-refresh. That is acceptable for a batch-loaded, mostly static personal dataset.
+Phase 3 found that boundary-aware token matching over `title` and `description`
+completed in about 0.5 seconds warm on the complete dataset, so the first query
+API does not need an FTS index for latency. Domain search should use substring
+semantics independently. Reconsider DuckDB's full-text extension if usage calls
+for relevance ranking, stemming, richer language semantics, or materially
+slower predicates. Its indexes do not update automatically and would need to be
+rebuilt after each dataset refresh.
 
 ## Backend design
 

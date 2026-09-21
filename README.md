@@ -66,3 +66,12 @@ uv run python -m app.cli import-csv \
 
 The importer only reads the CSV and atomically activates a separately built and
 validated DuckDB database.
+
+Run the Phase 3 query and export benchmarks with:
+
+```bash
+cd backend
+uv run python -m app.cli benchmark \
+  --database ../data/storeleads.duckdb \
+  --output-dir ../data/benchmarks
+```

@@ -128,6 +128,15 @@ rows should be an explicit, reported policy rather than a default.
 
 ## Phase 3 — Benchmark representative queries
 
+**Status: complete (2026-09-22).** A repeatable suite now selects representative
+predicates from the active database and measures all eleven query and export
+workloads with connection-cold and warm timings. Every interactive workload was
+below one second in the measured run. A 10,000-row direct CSV export completed
+in about 0.04 seconds warm, and a full 4,053,656-row export completed in about
+1.62 seconds warm with an approximately 28 MiB process peak-RSS delta. No
+additional ART index, physical reordering, or FTS index is justified by current
+latency. See [Query Benchmark Results](query-benchmark.md).
+
 Create a small benchmark suite covering likely user behavior:
 
 1. Exact domain lookup.

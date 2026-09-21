@@ -40,3 +40,21 @@ The source CSV is read-only. Malformed rows are not skipped. Failed type or
 money conversions, schema drift, a domain invariant failure, or a formerly
 empty omitted column becoming populated aborts the import and leaves any
 existing database untouched.
+
+## Benchmark representative queries
+
+The Phase 3 suite chooses predicates from the imported data, measures one cold
+connection run plus three warm runs of eleven representative workloads, uses
+`EXPLAIN ANALYZE` for slow cases, and writes dated JSON and Markdown reports:
+
+```bash
+uv run python -m app.cli benchmark \
+  --database ../data/storeleads.duckdb \
+  --output-dir ../data/benchmarks \
+  --memory-limit 4GB
+```
+
+"Cold" means the first execution on a new DuckDB connection; the suite does
+not require privileged operating-system cache eviction. Export benchmarks use
+DuckDB `COPY` into temporary files, record file size and the process peak-RSS
+delta, and delete the files after each measurement.
