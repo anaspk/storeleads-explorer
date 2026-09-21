@@ -20,7 +20,10 @@ records from the full Store Leads CSV.
 - The full source described by the owner has more than 4 million rows and is
   approximately 4.8 GB.
 - The full CSV is not currently present in this workspace.
-- No application code or database has been created yet.
+- Phase 0 is complete: the FastAPI backend and React/Vite frontend are
+  scaffolded, runnable, and covered by baseline quality checks.
+- No application database has been created yet; profiling and ingestion begin
+  in Phases 1 and 2.
 
 ## Current recommendation in one sentence
 

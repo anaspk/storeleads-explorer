@@ -1,0 +1,40 @@
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Node / Vite
+node_modules/
+.pnpm-store/
+frontend/dist/
+*.tsbuildinfo
+
+# Local application data
+data/*
+!data/.gitkeep
+!data/first_100_rows.csv
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# Generated exports and temporary files
+exports/*
+!exports/.gitkeep
+*.partial
+*.tmp
+
+# Local environment files
+.env
+.env.*
+!.env.example

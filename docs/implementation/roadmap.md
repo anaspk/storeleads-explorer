@@ -10,6 +10,12 @@ export semantics are correct and fast.
 
 ## Phase 0 — Establish the project
 
+**Status: complete (2026-09-22).** The repository now follows the target layout,
+with a runnable FastAPI health endpoint, a React/TypeScript/Vite application
+shell, dependency lockfiles, baseline tests and static checks, documented local
+startup commands, and ignore rules for full datasets, DuckDB files, temporary
+files, and generated exports.
+
 Suggested eventual layout:
 
 ```text
