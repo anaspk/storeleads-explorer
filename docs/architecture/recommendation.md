@@ -58,10 +58,16 @@ make `domain` the primary key until uniqueness has been tested on the full file.
 
 ### Bridge tables
 
-Normalize only multi-value fields that are frequently filtered or faceted. The
-first candidates are technologies, features, installed applications, and
-shipping carriers. Prematurely normalizing every possible list field would make
-ingestion and application code unnecessarily complicated.
+Normalize every column that is confirmed to encode a colon-delimited collection.
+Likely examples include technologies, features, installed applications,
+shipping carriers, sales channels, categories, aliases, and cluster domains.
+The full-file profiler must confirm this list and the delimiter semantics before
+ingestion code is finalized.
+
+Use a separate child table for each collection so values can be typed, indexed,
+faceted, and joined without substring scans. Preserve the original scalar text
+on `stores` for provenance and faithful exports. A value containing a colon is
+not automatically a collection: URLs and free-form prose are counterexamples.
 
 ### Indexes
 
@@ -80,19 +86,19 @@ than guessed. No single physical order will optimize all 162 columns.
 
 ### Text search
 
-Treat these as separate operations:
+The initial search contract is:
 
-- exact lookup, for domains or handles;
-- prefix/substring matching, for predictable identifier behavior; and
-- token-based full-text search across selected prose fields.
+- `title` and `description`: token-based full-text search;
+- `domain`: substring matching; and
+- other columns: no global-search behavior until decided individually.
 
 Do not implement an unqualified substring search across all 162 columns. It
 would be expensive and produce low-quality results.
 
-An initial full-text index could cover `domain`, `merchant_name`, `title`, and
-`description`. DuckDB full-text indexes do not update automatically, so rebuild
-the index after each dataset refresh. That is acceptable for a batch-loaded,
-mostly static personal dataset.
+The initial full-text index should cover `title` and `description`. Domain search
+should use substring semantics independently of that index. DuckDB full-text
+indexes do not update automatically, so rebuild the index after each dataset
+refresh. That is acceptable for a batch-loaded, mostly static personal dataset.
 
 ## Backend design
 
@@ -145,6 +151,10 @@ Exact `COUNT(*)` and facet calculations can be more expensive than returning
 the first result page. Make counts cancellable, cached, or explicitly requested
 if benchmarks show noticeable latency.
 
+The target for an interactive page query, including its filters and sorting, is
+under five seconds on the owner's machine. Faster responses are desirable, but
+sub-five-second performance is the acceptance threshold for the first release.
+
 ### Export path
 
 Let DuckDB serialize exports directly:
@@ -164,6 +174,17 @@ The final implementation must use validated query construction and parameter
 binding. Write to a temporary filename, rename after success, and expose job
 status for exports large enough to outlive an HTTP request. Do not materialize
 the complete result as Python objects.
+
+The expected common case is no more than 10,000 exported rows. Optimize and test
+that path first. A synchronous export may be acceptable if benchmarks show it
+comfortably completes within normal HTTP timeouts; retain the job abstraction so
+larger or slower exports can run asynchronously.
+
+Exports must not have a hard row cap and must not show a warning merely because
+they exceed 10,000 rows. The 10,000-row figure is a common-case performance
+target, not a product limit. Longer completion times are acceptable for larger
+exports, and the UI should report ordinary progress/status without presenting
+the export size as an error condition.
 
 ## Frontend design
 
@@ -224,7 +245,10 @@ DuckDB is the better default here.
 - Keep the database on a local SSD rather than a network-mounted filesystem.
 - Budget roughly 15–25 GB of free space during development for the source CSV,
   database, temporary files, optional raw staging data, indexes, and exports.
+- Benchmark interactive queries against a five-second acceptance threshold and
+  the normal export path at 10,000 rows.
+- Allow exports of any result size; route long-running work through the export
+  job path instead of rejecting or warning about it.
 - Record the source checksum, import timestamp, row count, rejection count, and
   schema version for every dataset load.
 - Preserve the original CSV until the typed import is verified.
-

@@ -85,7 +85,8 @@ Responsibilities:
 3. Load raw or explicitly typed data.
 4. Transform money, dates, booleans, and numeric measurements.
 5. Generate `store_id` values.
-6. Build selected bridge tables.
+6. Build bridge tables for every column confirmed to contain a
+   colon-delimited collection.
 7. Create justified indexes.
 8. Validate row counts and important invariants.
 9. Record import metadata.
@@ -99,6 +100,8 @@ rows should be an explicit, reported policy rather than a default.
 - The full dataset imports without unexplained row loss.
 - A second run is deterministic and safe.
 - Type-conversion failures are visible.
+- Every confirmed colon-delimited collection has a populated, validated child
+  table while its original source value remains available.
 - Representative SQL queries return correct results.
 
 ## Phase 3 — Benchmark representative queries
@@ -110,20 +113,22 @@ Create a small benchmark suite covering likely user behavior:
 3. Numeric range filter on visits or sales.
 4. Boolean plus numeric filter.
 5. Technology membership filter.
-6. Text search over name/title/description.
-7. Sort a broad result by rank or visits and return the first 100 rows.
-8. Multi-filter facet counts.
-9. Export a small result.
-10. Export a large result.
+6. Full-text search over `title` and `description`.
+7. Substring search over `domain`.
+8. Sort a broad result by rank or visits and return the first 100 rows.
+9. Multi-filter facet counts.
+10. Export a representative 10,000-row result.
+11. Export a larger result to identify the point at which background execution
+    becomes necessary.
 
 Capture cold and warm timings and use `EXPLAIN ANALYZE` for slow queries. Only
 then decide whether physical ordering, bridge tables, or ART indexes are needed.
 
-Indicative, not guaranteed, targets on the intended machine:
+Acceptance targets on the intended machine:
 
 - point lookup: well below 500 ms;
-- ordinary first-page filters: around 1 second or less;
-- expensive broad searches/facets: a few seconds with visible progress;
+- ordinary first-page filters: ideally around 1 second or less;
+- all supported interactive queries: under 5 seconds;
 - export: streaming/background work with no application memory spike.
 
 ## Phase 4 — Build the query API
@@ -186,6 +191,13 @@ Debounce text filters and ensure stale responses cannot replace newer results.
 The export request should persist the validated query specification, selected
 columns, creation time, status, output path, row count, byte size, and any error.
 
+Most exports are expected to contain at most 10,000 rows. Implement and optimize
+that path first. Keep the job model even if the initial 10,000-row path is served
+synchronously, because larger results or expensive filters may still require
+background execution. Do not impose a row cap or display a size warning for
+larger exports; slower completion is acceptable. Normal job progress and status
+remain useful for all asynchronous exports.
+
 Suggested lifecycle:
 
 ```text
@@ -200,6 +212,7 @@ introduce Redis or a distributed queue unless application requirements change.
 ### Exit criteria
 
 - DuckDB writes CSV directly without materializing all rows in Python.
+- Results of any size can be exported without a row-count cap or size warning.
 - Partial files are not offered for download.
 - Failures leave actionable diagnostics.
 - Old exports can be cleaned using a documented retention rule.
@@ -221,11 +234,11 @@ UI work:
 
 1. Which 10–20 fields should appear in the default table?
 2. Which filters are used most often?
-3. Does search need fuzzy matching, substring matching, or word-based relevance?
-4. Are exports usually hundreds, thousands, or millions of rows?
-5. Is the source replaced periodically, and if so, how often?
-6. Must exports reproduce original raw strings or use cleaned typed values?
-7. Are nested OR conditions required, or will a flat list of AND filters suffice
+3. What search behavior should apply to columns other than `title`,
+   `description`, and `domain`?
+4. Is the source replaced periodically, and if so, how often?
+5. Must exports reproduce original raw strings or use cleaned typed values?
+6. Are nested OR conditions required, or will a flat list of AND filters suffice
    initially?
 
 ## First executable milestone
@@ -240,4 +253,3 @@ The first meaningful deliverable should be:
 
 That milestone will confirm or invalidate the architecture with evidence before
 the application surface grows.
-

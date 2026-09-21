@@ -103,8 +103,9 @@ Some individual values, especially URLs, also contain colons. Splitting every
 column on `:` would therefore be unsafe. Each candidate column needs an explicit
 delimiter rule validated against the complete file.
 
-Frequently filtered categorical collections should eventually be normalized to
-bridge tables such as:
+The product decision is to normalize every column confirmed to represent a
+colon-delimited collection, not only the most frequently filtered collections.
+Likely bridge tables include:
 
 ```text
 store_technologies(store_id, technology)
@@ -113,7 +114,10 @@ store_installed_apps(store_id, app)
 store_shipping_carriers(store_id, carrier)
 ```
 
-Retain the original string in the main table for provenance and export parity.
+The full-file profiler must identify the complete set and verify each delimiter
+rule. Retain every original string in the main table for provenance and export
+parity. Do not normalize a field solely because a value contains `:`; URLs and
+ordinary prose can contain colons without representing a list.
 
 ## Missingness observed in the sample
 
@@ -149,6 +153,8 @@ for each column:
 - values that fail proposed casts
 - representative frequent values for categorical fields
 - delimiter statistics for candidate multi-value fields
+- a confirmed scalar-versus-collection classification for every column that
+  contains colons
 
 Also verify:
 
@@ -165,8 +171,9 @@ Use a two-stage import during schema discovery:
 1. Load a raw representation safely, treating uncertain fields as `VARCHAR`.
 2. Create the typed `stores` table with explicit conversions using `TRY_CAST`
    and transformation expressions.
+3. Create normalized child tables for every confirmed colon-delimited
+   collection column.
 
 Once the schema is stable, this may be consolidated into a direct typed import
 to reduce temporary disk use. Preserve ingestion metadata and conversion-error
 counts even after consolidation.
-
