@@ -51,6 +51,13 @@ license and sensitivity permit committing it.
 
 ## Phase 1 — Profile the complete CSV
 
+**Status: complete (2026-09-22).** The repeatable read-only profiler scanned
+4,053,656 rows and 162 columns in 106.04 seconds, with no parser rejections or
+typed-conversion failures. It confirmed exact `domain` uniqueness, validated
+both money fields across the full source, documented collection split rules,
+and produced dated JSON and Markdown reports. See
+[Complete CSV Profile](../data/full-profile.md).
+
 Deliver a repeatable profiler rather than relying on manual inspection.
 
 Outputs should include:

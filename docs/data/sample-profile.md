@@ -2,6 +2,10 @@
 
 Last updated: 2026-09-22
 
+> This document records the original 100-row observations. Phase 1 has now
+> profiled the complete source; use [Complete CSV Profile](full-profile.md) for
+> confirmed full-file findings.
+
 ## Source and scope
 
 The observations below come from `data/first_100_rows.csv` only.

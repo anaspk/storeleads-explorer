@@ -8,6 +8,9 @@ records from the full Store Leads CSV.
 
 - [Data profile](data/sample-profile.md) — facts observed in the supplied
   100-row sample, limitations of that sample, and schema implications.
+- [Complete CSV profile](data/full-profile.md) — Phase 1 results from all
+  4,053,656 source rows, including confirmed types, identity rules, money
+  parsing, and collection delimiters.
 - [Architecture recommendation](architecture/recommendation.md) — recommended
   stack, database choice, query model, and alternatives.
 - [Implementation roadmap](implementation/roadmap.md) — phased plan, suggested
@@ -17,13 +20,14 @@ records from the full Store Leads CSV.
 
 - The workspace contains `data/first_100_rows.csv`.
 - The sample has 100 data rows and 162 columns.
-- The full source described by the owner has more than 4 million rows and is
-  approximately 4.8 GB.
-- The full CSV is not currently present in this workspace.
+- The full source has 4,053,656 rows, 162 columns, and is 4,739,476,938 bytes.
+- The full CSV is stored outside this workspace and remains unchanged.
 - Phase 0 is complete: the FastAPI backend and React/Vite frontend are
   scaffolded, runnable, and covered by baseline quality checks.
-- No application database has been created yet; profiling and ingestion begin
-  in Phases 1 and 2.
+- Phase 1 is complete: a repeatable profiler scanned the complete CSV and
+  produced dated JSON and Markdown reports.
+- No application database has been created yet; repeatable ingestion begins in
+  Phase 2.
 
 ## Current recommendation in one sentence
 
@@ -46,14 +50,19 @@ sorting, pagination, faceting, and CSV generation performed on the server.
   hard row cap. Longer completion times are acceptable for these uncommon cases.
 - Interactive query latency below five seconds is acceptable.
 
-## Decisions still requiring real-data validation
+## Confirmed by complete-file profiling
 
-1. The explicit type of every column across the complete CSV.
-2. Whether `domain` is unique enough to be a natural identifier.
-3. Which columns and filter combinations are used most frequently.
-4. Search semantics for columns other than `title`, `description`, and `domain`.
-5. The complete set of columns that semantically contain colon-delimited lists,
-   as opposed to scalar values that happen to contain colons.
+1. The complete source parses as UTF-8 with no rejected rows.
+2. `domain` is non-null and exactly unique across all 4,053,656 rows.
+3. All proposed typed conversions have zero failures in the current source.
+4. Both sales fields are consistently parseable USD values.
+5. Twelve fields have confirmed collection semantics and explicit split rules.
 
-These are validation items, not blockers for scaffolding the ingestion profiler
-or the initial application.
+## Decisions still requiring usage validation
+
+1. Which columns and filter combinations are used most frequently.
+2. Search semantics for columns other than `title`, `description`, and `domain`.
+3. The eventual types of seventeen columns that are completely empty in this
+   source version.
+
+These are not blockers for repeatable ingestion.
