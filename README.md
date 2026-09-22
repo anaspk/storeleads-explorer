@@ -65,7 +65,7 @@ Build the local database from the profiled source with:
 ```bash
 cd backend
 uv run python -m app.cli import-csv \
-  /Users/muhammadanas/projects/storeleads-clone-misc/storeleads-woo-all-WORKING.csv \
+  /path/to/full.csv \
   --database ../data/storeleads.duckdb
 ```
 
