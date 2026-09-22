@@ -9,13 +9,19 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
+from app.services.export_service import ExportManager
 from app.services.query_service import DEFAULT_TIMEOUT_SECONDS, QueryAPIError
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Own application-scoped resources as later phases add them."""
-    yield
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    application.state.export_manager = ExportManager(
+        application.state.database_path, application.state.export_dir
+    )
+    try:
+        yield
+    finally:
+        application.state.export_manager.shutdown()
 
 
 def _error_body(code: str, message: str, details: Any = None) -> dict[str, object]:
@@ -28,6 +34,7 @@ def _error_body(code: str, message: str, details: Any = None) -> dict[str, objec
 def create_app(
     *,
     database_path: Path | None = None,
+    export_dir: Path | None = None,
     query_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> FastAPI:
     application = FastAPI(
@@ -38,6 +45,10 @@ def create_app(
     default_database = Path(__file__).resolve().parents[2] / "data/storeleads.duckdb"
     application.state.database_path = database_path or Path(
         os.environ.get("STORELEADS_DATABASE", default_database)
+    )
+    default_export_dir = Path(__file__).resolve().parents[2] / "exports"
+    application.state.export_dir = export_dir or Path(
+        os.environ.get("STORELEADS_EXPORT_DIR", default_export_dir)
     )
     application.state.query_timeout_seconds = query_timeout_seconds
 

@@ -1,4 +1,4 @@
-import type { ApiErrorBody, QueryRequest, QueryResponse, SchemaResponse } from "./types";
+import type { ApiErrorBody, ExportJob, ExportRequest, QueryRequest, QueryResponse, SchemaResponse } from "./types";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -25,4 +25,20 @@ export function queryStores(payload: QueryRequest): Promise<QueryResponse> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export function createExport(payload: ExportRequest): Promise<ExportJob> {
+  return requestJson<ExportJob>("/api/exports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getExport(exportId: string): Promise<ExportJob> {
+  return requestJson<ExportJob>(`/api/exports/${exportId}`);
+}
+
+export function cancelExport(exportId: string): Promise<ExportJob> {
+  return requestJson<ExportJob>(`/api/exports/${exportId}/cancel`, { method: "POST" });
 }

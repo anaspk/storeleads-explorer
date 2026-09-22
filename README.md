@@ -22,9 +22,10 @@ uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 The health check is available at <http://127.0.0.1:8000/api/health>. The
-data endpoints are `GET /api/schema`, `POST /api/query`, and `POST /api/facets`;
-their contract is documented in
-[`docs/implementation/query-api.md`](docs/implementation/query-api.md).
+data endpoints include `GET /api/schema`, `POST /api/query`, `POST /api/facets`,
+and the `/api/exports` job lifecycle; their contracts are documented in
+[`docs/implementation/query-api.md`](docs/implementation/query-api.md) and
+[`docs/implementation/export-jobs.md`](docs/implementation/export-jobs.md).
 
 ## Set up the frontend
 
@@ -78,4 +79,12 @@ cd backend
 uv run python -m app.cli benchmark \
   --database ../data/storeleads.duckdb \
   --output-dir ../data/benchmarks
+```
+
+Completed, failed, and cancelled export jobs are retained for seven days by
+default. Remove older jobs and their CSV files with:
+
+```bash
+cd backend
+uv run python -m app.cli cleanup-exports --export-dir ../exports --retention-days 7
 ```

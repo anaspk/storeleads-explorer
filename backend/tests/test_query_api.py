@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 from uuid import UUID
 
@@ -84,8 +86,21 @@ def client(tmp_path: Path) -> TestClient:
                 (UUID(int=3), 1, "Klaviyo"),
             ],
         )
-    with TestClient(create_app(database_path=database)) as test_client:
+    with TestClient(
+        create_app(database_path=database, export_dir=tmp_path / "exports")
+    ) as test_client:
         yield test_client
+
+
+def wait_for_export(client: TestClient, export_id: str) -> dict[str, object]:
+    for _ in range(100):
+        response = client.get(f"/api/exports/{export_id}")
+        assert response.status_code == 200
+        job = response.json()
+        if job["status"] in {"completed", "failed", "cancelled"}:
+            return job
+        time.sleep(0.01)
+    raise AssertionError("export did not reach a terminal status")
 
 
 def test_schema_is_complete_and_marks_collections(client: TestClient) -> None:
@@ -305,8 +320,73 @@ def test_facets_respect_filters_and_collection_values(client: TestClient) -> Non
 
 
 def test_missing_database_is_a_structured_service_error(tmp_path: Path) -> None:
-    with TestClient(create_app(database_path=tmp_path / "missing.duckdb")) as client:
+    with TestClient(
+        create_app(
+            database_path=tmp_path / "missing.duckdb",
+            export_dir=tmp_path / "exports",
+        )
+    ) as client:
         response = client.post("/api/query", json={})
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "database_unavailable"
+
+
+def test_export_job_persists_query_and_streams_csv(client: TestClient) -> None:
+    response = client.post(
+        "/api/exports",
+        json={
+            "columns": ["domain", "country_code"],
+            "filters": [{"column": "status", "operator": "eq", "value": "active"}],
+            "sort": [{"column": "domain", "direction": "desc"}],
+        },
+    )
+
+    assert response.status_code == 202
+    export_id = response.json()["export_id"]
+    job = wait_for_export(client, export_id)
+    assert job["status"] == "completed"
+    assert job["row_count"] == 2
+    assert job["byte_size"] > 0
+    assert job["download_url"] == f"/api/exports/{export_id}/download"
+
+    download = client.get(job["download_url"])
+    assert download.status_code == 200
+    assert download.headers["content-type"].startswith("text/csv")
+    assert download.text.splitlines() == [
+        "domain,country_code",
+        "beta.example,CA",
+        "alpha.example,US",
+    ]
+
+    export_dir = Path(client.app.state.export_dir)
+    metadata = json.loads((export_dir / f"{export_id}.json").read_text())
+    assert metadata["query"]["filters"][0]["value"] == "active"
+    assert metadata["columns"] == ["domain", "country_code"]
+    assert not (export_dir / f"{export_id}.partial").exists()
+
+
+def test_export_reuses_query_validation_and_reports_worker_failure(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "empty.duckdb"
+    duckdb.connect(str(database)).close()
+    with TestClient(
+        create_app(database_path=database, export_dir=tmp_path / "exports")
+    ) as client:
+        invalid = client.post(
+            "/api/exports",
+            json={"columns": ["domain; DROP TABLE stores"]},
+        )
+        assert invalid.status_code == 422
+        assert invalid.json()["error"]["code"] == "invalid_column"
+
+        created = client.post("/api/exports", json={"columns": ["domain"]})
+        job = wait_for_export(client, created.json()["export_id"])
+        assert job["status"] == "failed"
+        assert "CSV export failed" in job["error"]
+        download = client.get(
+            f'/api/exports/{created.json()["export_id"]}/download'
+        )
+        assert download.status_code == 409
+        assert download.json()["error"]["code"] == "export_not_ready"

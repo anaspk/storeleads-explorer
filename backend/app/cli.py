@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from app.services.csv_importer import DEFAULT_MEMORY_LIMIT, ImportError, import_csv
+from app.services.export_service import DEFAULT_RETENTION_DAYS, cleanup_exports
 from app.services.query_benchmark import (
     DEFAULT_EXPLAIN_THRESHOLD_SECONDS,
     DEFAULT_LARGE_EXPORT_ROWS,
@@ -46,11 +47,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_EXPLAIN_THRESHOLD_SECONDS,
     )
+    cleanup = commands.add_parser(
+        "cleanup-exports", description="Delete terminal export jobs past retention"
+    )
+    cleanup.add_argument("--export-dir", type=Path, default=Path("../exports"))
+    cleanup.add_argument(
+        "--retention-days", type=int, default=DEFAULT_RETENTION_DAYS
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.command == "cleanup-exports":
+        try:
+            jobs, byte_size = cleanup_exports(args.export_dir, args.retention_days)
+        except ValueError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        print(f"Removed {jobs} export job(s), freeing {byte_size:,} bytes.")
+        return 0
     if args.command == "import-csv":
         try:
             result = import_csv(

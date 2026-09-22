@@ -22,7 +22,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .page-heading h1 { margin: 7px 0 8px; font: 600 clamp(34px, 4vw, 56px)/1.05 Manrope, sans-serif; letter-spacing: -.055em; color: #142119; }
 .page-heading p { color: #69766f; margin: 0; font-size: 15px; }
 .section-kicker { color: #43805c; font: 700 11px Manrope, sans-serif; text-transform: uppercase; letter-spacing: .13em; }
-.button { min-height: 39px; border: 1px solid transparent; border-radius: 9px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 160ms ease; }
+.button { min-height: 39px; border: 1px solid transparent; border-radius: 9px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; transition: 160ms ease; }
 .button:hover:not(:disabled) { transform: translateY(-1px); }
 .button:disabled { opacity: .42; cursor: not-allowed; }
 .button--primary { color: #fff; background: #17452e; border-color: #17452e; box-shadow: 0 6px 14px rgb(23 69 46 / 12%); }
@@ -114,6 +114,15 @@ tbody tr:hover td { background: #f9fbf8; }
 .export-columns { margin-top: 18px; }
 .export-columns p { color: #5f6d64; font-size: 12px; line-height: 1.7; }
 .notice { margin-top: 17px; padding: 12px 14px; border-radius: 8px; color: #59675e; background: #f0f4ee; font-size: 12px; line-height: 1.5; }
+.notice--error { color: #8d332c; background: #fae9e6; }
+.export-job { margin-top: 17px; padding: 13px 14px; border: 1px solid #dfe6df; border-radius: 9px; background: #f7f9f6; }
+.export-job--completed { border-color: #cce2d1; background: #f0f7f1; }
+.export-job--failed { border-color: #efd1cd; background: #fcf2f0; }
+.export-job-heading { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.export-job p { margin: 7px 0 0 19px; color: #68766d; font-size: 12px; line-height: 1.45; }
+.status-dot, .status-spinner { width: 10px; height: 10px; border-radius: 50%; background: #529269; }
+.export-job--failed .status-dot, .export-job--cancelled .status-dot { background: #b75a50; }
+.status-spinner { border: 2px solid #bad0c0; border-top-color: #28603e; background: transparent; animation: spin .8s linear infinite; }
 .state-page { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 13px; padding: 30px; text-align: center; background: #f3f5f0; }
 .state-page h1 { margin: 0; font: 600 28px Manrope, sans-serif; }
 .state-page p { margin: 0 0 8px; color: #748078; }

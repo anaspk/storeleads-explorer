@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,3 +75,22 @@ class SchemaColumnResponse(APIModel):
 class SchemaResponse(APIModel):
     schema_version: int
     columns: list[SchemaColumnResponse]
+
+
+class ExportRequest(APIModel):
+    columns: list[str] = Field(default_factory=list)
+    filters: list[FilterNode] = Field(default_factory=list)
+    sort: list[SortSpec] = Field(default_factory=list)
+
+
+class ExportJobResponse(APIModel):
+    export_id: str
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    columns: list[str]
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    row_count: int | None = None
+    byte_size: int | None = None
+    error: str | None = None
+    download_url: str | None = None

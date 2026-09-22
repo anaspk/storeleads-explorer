@@ -22,6 +22,8 @@ records from the full Store Leads CSV.
   query and direct-export timings from the complete imported dataset.
 - [Query API](implementation/query-api.md) — Phase 4 endpoint contract, filter
   operators, cursor behavior, limits, errors, and verification.
+- [Export jobs](implementation/export-jobs.md) — Phase 6 job lifecycle, API,
+  atomic CSV publication, recovery, and retention cleanup.
 
 ## Current project state
 
@@ -40,6 +42,8 @@ records from the full Store Leads CSV.
   bound values, deterministic cursor pagination, and structured errors.
 - Phase 5 provides the schema-driven data explorer, server-side table controls,
   type-aware filters, saved views, and export preparation UI.
+- Phase 6 provides durable export jobs, direct DuckDB CSV writing, cancellation,
+  status polling, safe downloads, and retention cleanup.
 
 ## Current recommendation in one sentence
 

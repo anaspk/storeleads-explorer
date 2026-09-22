@@ -18,6 +18,7 @@ from uuid import UUID
 import duckdb
 
 from app.models.query import (
+    ExportRequest,
     FacetRequest,
     FacetResponse,
     FacetValue,
@@ -334,6 +335,22 @@ def _validated_sort(sort: list[SortSpec]) -> list[SortSpec]:
     if "store_id" not in seen:
         result.append(SortSpec(column="store_id", direction="asc"))
     return result
+
+
+def compile_export_query(request: ExportRequest) -> tuple[str, list[Any], list[str]]:
+    """Build the validated, unbounded SELECT used by DuckDB COPY."""
+    selected = _validate_columns(request.columns)
+    sort = _validated_sort(request.sort)
+    where = compile_filters(request.filters)
+    projection = ", ".join(f's.{_identifier(column)}' for column in selected)
+    order = ", ".join(
+        f's.{_identifier(item.column)} {item.direction.upper()} NULLS LAST'
+        for item in sort
+    )
+    sql = (
+        f"SELECT {projection} FROM stores s WHERE ({where.sql}) ORDER BY {order}"
+    )
+    return sql, where.parameters, selected
 
 
 def _json_value(value: Any) -> Any:

@@ -13,9 +13,10 @@ import {
   type ReactNode,
 } from "react";
 
-import { getSchema, queryStores } from "./api";
+import { cancelExport, createExport, getExport, getSchema, queryStores } from "./api";
 import type {
   ExplorerView,
+  ExportJob,
   FilterCondition,
   QueryFilter,
   SchemaColumn,
@@ -173,6 +174,71 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.currentTarget === event.target && onClose()}><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label={`Close ${title}`}><Icon name="close" /></button></div>{children}</div></div>;
 }
 
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 ** 2).toFixed(1)} MB`;
+}
+
+function ExportModal({ columns, selectedColumns, filters, sort, exportJobId, setExportJobId, onClose }: {
+  columns: SchemaColumn[];
+  selectedColumns: string[];
+  filters: QueryFilter[];
+  sort: SortSpec[];
+  exportJobId: string | null;
+  setExportJobId: (value: string | null) => void;
+  onClose: () => void;
+}) {
+  const [createdJob, setCreatedJob] = useState<ExportJob | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const jobQuery = useQuery({
+    queryKey: ["export", exportJobId],
+    queryFn: () => getExport(exportJobId!),
+    enabled: Boolean(exportJobId),
+    initialData: createdJob ?? undefined,
+    refetchInterval: (query) => ["completed", "failed", "cancelled"].includes(query.state.data?.status ?? "") ? false : 750,
+    retry: false,
+  });
+  const job = jobQuery.data ?? createdJob;
+  const start = async () => {
+    setCreating(true); setActionError("");
+    try {
+      const created = await createExport({ columns: selectedColumns, filters, sort });
+      setCreatedJob(created); setExportJobId(created.export_id);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not create export");
+    } finally {
+      setCreating(false);
+    }
+  };
+  const cancel = async () => {
+    if (!job) return;
+    setActionError("");
+    try {
+      setCreatedJob(await cancelExport(job.export_id));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not cancel export");
+    }
+  };
+  const active = job?.status === "queued" || job?.status === "running";
+  const displayedColumns = job?.columns ?? selectedColumns;
+  return <Modal title="Export results" onClose={onClose}>
+    <div className="export-summary"><div><span>Scope</span><strong>All stores matching this query</strong></div><div><span>Filters</span><strong>{job ? "Saved query" : filters.length || "None"}</strong></div><div><span>Columns</span><strong>{displayedColumns.length}</strong></div><div><span>Format</span><strong>CSV</strong></div></div>
+    <div className="export-columns"><span>Included columns</span><p>{displayedColumns.map((name) => columns.find((column) => column.name === name)?.label).join(" · ")}</p></div>
+    {job && <div className={`export-job export-job--${job.status}`}><div className="export-job-heading"><span className={active ? "status-spinner" : "status-dot"} /><strong>{job.status === "queued" ? "Export queued" : job.status === "running" ? "Creating CSV…" : job.status === "completed" ? "Export ready" : job.status === "cancelled" ? "Export cancelled" : "Export failed"}</strong></div>{job.status === "completed" && <p>{job.row_count?.toLocaleString()} rows · {formatBytes(job.byte_size ?? 0)}</p>}{job.error && <p>{job.error}</p>}{jobQuery.isError && <p>{jobQuery.error.message}</p>}</div>}
+    {!job && <div className="notice">The complete filtered result will be written directly by DuckDB. There is no row limit.</div>}
+    {actionError && <div className="notice notice--error">{actionError}</div>}
+    <div className="modal-actions">
+      {active && <button className="button button--quiet" onClick={() => void cancel()}>Cancel export</button>}
+      {!job && <button className="button button--primary" disabled={creating} onClick={() => void start()}>{creating ? "Starting…" : "Create export"}</button>}
+      {job?.status === "completed" && <button className="button button--quiet" onClick={() => { setCreatedJob(null); setExportJobId(null); }}>New export</button>}
+      {job?.status === "completed" && job.download_url && <a className="button button--primary" href={job.download_url}>Download CSV</a>}
+      {job && !active && job.status !== "completed" && <button className="button button--primary" onClick={() => { setCreatedJob(null); setExportJobId(null); setActionError(""); }}>Try again</button>}
+    </div>
+  </Modal>;
+}
+
 export function App() {
   const schemaQuery = useQuery({ queryKey: ["schema"], queryFn: getSchema, staleTime: Infinity, retry: 1 });
   const columns = schemaQuery.data?.columns ?? [];
@@ -185,6 +251,7 @@ export function App() {
   const [showFilters, setShowFilters] = useState(false);
   const [showSave, setShowSave] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [exportJobId, setExportJobId] = useState<string | null>(null);
   const [viewName, setViewName] = useState("");
   const [savedViews, setSavedViews] = useState<ExplorerView[]>(() => readJson(SAVED_VIEWS_KEY, []));
   const [hydrated, setHydrated] = useState(false);
@@ -280,6 +347,6 @@ export function App() {
       </section>
     </main>
     {showSave && <Modal title="Save this view" onClose={() => setShowSave(false)}><p className="modal-copy">Save the {selectedColumns.length} visible columns, {filters.length} filters, sorting, and page size in this browser.</p><label className="field-label">View name<input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveView()} placeholder="e.g. High-traffic US stores" /></label>{savedViews.length > 0 && <div className="saved-list"><span>Saved views</span>{savedViews.map((view) => <div key={view.name}><button className="saved-name" onClick={() => { restoreView(view); setShowSave(false); }}>{view.name}</button><button className="icon-button" onClick={() => deleteView(view.name)} aria-label={`Delete ${view.name}`}><Icon name="close" /></button></div>)}</div>}<div className="modal-actions"><button className="button button--quiet" onClick={() => setShowSave(false)}>Cancel</button><button className="button button--primary" disabled={!viewName.trim()} onClick={saveView}>Save view</button></div></Modal>}
-    {showExport && <Modal title="Export results" onClose={() => setShowExport(false)}><div className="export-summary"><div><span>Scope</span><strong>All stores matching this query</strong></div><div><span>Filters</span><strong>{readyFilters.length || "None"}</strong></div><div><span>Columns</span><strong>{selectedColumns.length}</strong></div><div><span>Format</span><strong>CSV</strong></div></div><div className="export-columns"><span>Included columns</span><p>{selectedColumns.map((name) => columns.find((column) => column.name === name)?.label).join(" · ")}</p></div><div className="notice">Export job creation will be enabled with the Phase 6 backend. Your query and column selection are ready.</div><div className="modal-actions"><button className="button button--primary" onClick={() => setShowExport(false)}>Done</button></div></Modal>}
+    {showExport && <ExportModal columns={columns} selectedColumns={selectedColumns} filters={readyFilters} sort={sort} exportJobId={exportJobId} setExportJobId={setExportJobId} onClose={() => setShowExport(false)} />}
   </div>;
 }

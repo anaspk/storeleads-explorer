@@ -47,6 +47,22 @@ export type QueryResponse = {
   next_cursor: string | null;
 };
 
+export type ExportRequest = Pick<QueryRequest, "columns" | "filters" | "sort">;
+export type ExportStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export type ExportJob = {
+  export_id: string;
+  status: ExportStatus;
+  columns: string[];
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  row_count: number | null;
+  byte_size: number | null;
+  error: string | null;
+  download_url: string | null;
+};
+
 export type ExplorerView = {
   name: string;
   columns: string[];

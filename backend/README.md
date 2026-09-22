@@ -93,3 +93,24 @@ curl -X POST http://127.0.0.1:8000/api/query \
 
 Treat `next_cursor` as opaque and resend it with the same sort. The complete
 contract is documented in [Query API](../docs/implementation/query-api.md).
+
+## Export filtered results
+
+Phase 6 adds persistent jobs at `POST /api/exports`, status at
+`GET /api/exports/{export_id}`, cancellation at
+`POST /api/exports/{export_id}/cancel`, and completed downloads at
+`GET /api/exports/{export_id}/download`. DuckDB writes to a partial file and
+atomically publishes the CSV after success; exports have no row cap.
+
+Job metadata and CSV files use `../exports` by default. Set
+`STORELEADS_EXPORT_DIR` to override it. The retention rule keeps terminal jobs
+for seven days. Run cleanup explicitly (and schedule it externally if desired):
+
+```bash
+uv run python -m app.cli cleanup-exports \
+  --export-dir ../exports \
+  --retention-days 7
+```
+
+See [Export Jobs](../docs/implementation/export-jobs.md) for the lifecycle and
+recovery behavior.

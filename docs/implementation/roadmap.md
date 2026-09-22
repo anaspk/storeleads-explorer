@@ -237,6 +237,14 @@ Debounce text filters and ensure stale responses cannot replace newer results.
 
 ## Phase 6 — Add export jobs
 
+**Status: complete (2026-09-22).** Export requests now persist their validated
+query, columns, timestamps, status, output path, counts, size, and diagnostics.
+A single in-process worker streams every result size through DuckDB `COPY`,
+publishes CSVs atomically, supports cancellation and restart recovery, and is
+wired to the explorer with status polling and completed-file downloads. A
+documented cleanup command applies the seven-day retention rule. See
+[Export Jobs](export-jobs.md).
+
 The export request should persist the validated query specification, selected
 columns, creation time, status, output path, row count, byte size, and any error.
 
