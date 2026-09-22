@@ -21,7 +21,7 @@ uv sync --dev
 uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The health check is available at <http://127.0.0.1:8000/api/health>. The Phase 4
+The health check is available at <http://127.0.0.1:8000/api/health>. The
 data endpoints are `GET /api/schema`, `POST /api/query`, and `POST /api/facets`;
 their contract is documented in
 [`docs/implementation/query-api.md`](docs/implementation/query-api.md).
@@ -37,7 +37,8 @@ pnpm dev
 ```
 
 Open <http://127.0.0.1:5173>. During development, Vite proxies `/api` requests
-to the backend on port 8000.
+to the backend on port 8000. The explorer restores the last workspace and named
+saved views from browser local storage.
 
 ## Quality checks
 

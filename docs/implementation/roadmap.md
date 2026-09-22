@@ -206,6 +206,15 @@ Implement and test:
 
 ## Phase 5 — Build the frontend
 
+**Status: complete (2026-09-22).** The React explorer now consumes the schema
+registry and query API to provide curated default columns, a searchable column
+chooser, type-aware AND filters, active-filter chips, server-controlled sorting
+and cursor pagination, automatic workspace persistence, named saved views, and
+an export-summary dialog. Text input changes are debounced before querying, and
+TanStack Query keys each request by the full view and cursor so stale responses
+cannot replace a newer result. The export dialog intentionally stops before job
+creation, which belongs to Phase 6.
+
 Start with one data-explorer page:
 
 1. Curated default columns.

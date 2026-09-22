@@ -38,6 +38,8 @@ records from the full Store Leads CSV.
   interactive cases met the latency target on the intended machine.
 - Phase 4 provides schema, query, and facet endpoints with strict allowlists,
   bound values, deterministic cursor pagination, and structured errors.
+- Phase 5 provides the schema-driven data explorer, server-side table controls,
+  type-aware filters, saved views, and export preparation UI.
 
 ## Current recommendation in one sentence
 
