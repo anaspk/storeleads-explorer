@@ -121,5 +121,5 @@ def test_rejects_schema_drift_before_creating_database(tmp_path: Path) -> None:
 
 
 def test_missing_source_has_a_clean_import_error(tmp_path: Path) -> None:
-    with pytest.raises(ImportError, match="No such file or directory"):
+    with pytest.raises(ImportError, match=r"missing\.csv"):
         import_csv(tmp_path / "missing.csv", tmp_path / "storeleads.duckdb")

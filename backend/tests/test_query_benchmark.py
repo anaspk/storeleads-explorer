@@ -6,7 +6,11 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from app.services.query_benchmark import BenchmarkError, benchmark_queries
+from app.services.query_benchmark import (
+    BenchmarkError,
+    _peak_rss_bytes,
+    benchmark_queries,
+)
 
 
 def _create_database(path: Path) -> None:
@@ -90,3 +94,7 @@ def test_benchmark_rejects_invalid_run_options(tmp_path: Path) -> None:
         benchmark_queries(
             database, tmp_path / "reports", large_export_rows=10_000
         )
+
+
+def test_peak_rss_is_available_on_supported_platforms() -> None:
+    assert _peak_rss_bytes() > 0

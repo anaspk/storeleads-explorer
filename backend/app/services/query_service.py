@@ -34,7 +34,10 @@ MAX_FILTER_NODES = 100
 MAX_FILTER_DEPTH = 5
 MAX_SORT_COLUMNS = 5
 MAX_LIST_VALUES = 100
-DEFAULT_TIMEOUT_SECONDS = 5.0
+# Cold queries over the full production dataset can take more than 20 seconds
+# even though their warm executions are much faster. Keep a bounded execution
+# time without cancelling known-valid interactive workloads prematurely.
+DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
 class QueryAPIError(RuntimeError):

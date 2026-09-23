@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.services.query_service import DEFAULT_TIMEOUT_SECONDS
 
 
 @pytest.fixture
@@ -120,6 +121,10 @@ def test_schema_is_complete_and_marks_collections(client: TestClient) -> None:
         "is_null",
         "is_not_null",
     ]
+
+
+def test_default_timeout_allows_known_cold_query_workloads() -> None:
+    assert DEFAULT_TIMEOUT_SECONDS >= 30
 
 
 def test_nested_filters_projection_and_collection_membership(

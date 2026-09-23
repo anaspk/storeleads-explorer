@@ -606,14 +606,17 @@ def import_csv(
             raise ImportError(
                 "Source metadata changed during import; database not activated"
             )
-        with temporary.open("rb") as handle:
+        with temporary.open("r+b") as handle:
             os.fsync(handle.fileno())
+
         os.replace(temporary, database)
-        directory_fd = os.open(database.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+
+        if os.name != "nt":
+            directory_fd = os.open(database.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         return ImportResult(
             database=database,
             row_count=row_count,
