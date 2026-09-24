@@ -38,11 +38,13 @@ class QueryRequest(APIModel):
     sort: list[SortSpec] = Field(default_factory=list)
     limit: int = Field(default=100, ge=1, le=500)
     cursor: str | None = None
+    offset: int = Field(default=0, ge=0)
 
 
 class QueryResponse(APIModel):
     rows: list[dict[str, Any]]
     next_cursor: str | None
+    total_count: int
 
 
 class FacetRequest(APIModel):

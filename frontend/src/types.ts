@@ -40,11 +40,13 @@ export type QueryRequest = {
   sort: SortSpec[];
   limit: number;
   cursor: string | null;
+  offset?: number;
 };
 
 export type QueryResponse = {
   rows: Record<string, unknown>[];
   next_cursor: string | null;
+  total_count: number;
 };
 
 export type ExportRequest = Pick<QueryRequest, "columns" | "filters" | "sort">;

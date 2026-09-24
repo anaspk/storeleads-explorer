@@ -158,6 +158,7 @@ def test_nested_filters_projection_and_collection_membership(
             {"domain": "alpha.example", "title": "Alpha"},
         ],
         "next_cursor": None,
+        "total_count": 2,
     }
 
 
@@ -182,7 +183,21 @@ def test_cursor_pagination_is_stable_with_ties_and_hidden_sort(
     assert third.json() == {
         "rows": [{"domain": "gamma.example"}],
         "next_cursor": None,
+        "total_count": 3,
     }
+
+
+def test_offset_pagination_supports_direct_page_access(client: TestClient) -> None:
+    response = client.post(
+        "/api/query",
+        json={"columns": ["domain"], "limit": 1, "offset": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["rows"] == [{"domain": "beta.example"}]
+    assert body["total_count"] == 3
+    assert body["next_cursor"] is not None
 
 
 def test_null_semantics_are_explicit(client: TestClient) -> None:

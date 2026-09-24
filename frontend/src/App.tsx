@@ -10,6 +10,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type FormEvent,
   type ReactNode,
 } from "react";
 
@@ -28,6 +29,15 @@ const SAVED_VIEWS_KEY = "storeleads:saved-views:v1";
 const WORKSPACE_KEY = "storeleads:workspace:v1";
 const NULL_OPERATORS = new Set(["is_null", "is_not_null"]);
 const LIST_OPERATORS = new Set(["in", "not_in", "between", "has_any", "has_all"]);
+
+type PaginationItem = number | "ellipsis";
+
+function paginationItems(currentPage: number, totalPages: number): PaginationItem[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  if (currentPage <= 4) return [1, 2, 3, 4, 5, "ellipsis", totalPages];
+  if (currentPage >= totalPages - 3) return [1, "ellipsis", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  return [1, "ellipsis", currentPage - 1, currentPage, currentPage + 1, "ellipsis", totalPages];
+}
 
 const OPERATOR_LABELS: Record<string, string> = {
   eq: "is", neq: "is not", contains: "contains",
@@ -246,7 +256,9 @@ export function App() {
   const [filters, setFilters] = useState<FilterCondition[]>([]);
   const [sort, setSort] = useState<SortSpec[]>([]);
   const [pageSize, setPageSize] = useState(50);
-  const [cursorHistory, setCursorHistory] = useState<(string | null)[]>([null]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const [pageCursors, setPageCursors] = useState<Record<number, string | null>>({ 1: null });
   const [showColumns, setShowColumns] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showSave, setShowSave] = useState(false);
@@ -279,15 +291,50 @@ export function App() {
     const value = normalizedValue(filter, column);
     return value === undefined ? { column: filter.column, operator: filter.operator } : { column: filter.column, operator: filter.operator, value };
   }), [columns, debouncedFilters]);
-  const cursor = cursorHistory.at(-1) ?? null;
+  const currentCursor = pageCursors[currentPage];
+  const canUseCursor = currentCursor !== undefined;
   const queryEnabled = selectedColumns.length > 0 && columns.length > 0;
   const storesQuery = useQuery({
-    queryKey: ["stores", selectedColumns, readyFilters, sort, pageSize, cursor],
-    queryFn: () => queryStores({ columns: selectedColumns, filters: readyFilters, sort, limit: pageSize, cursor }),
+    queryKey: ["stores", selectedColumns, readyFilters, sort, pageSize, currentPage, currentCursor],
+    queryFn: () => queryStores({ columns: selectedColumns, filters: readyFilters, sort, limit: pageSize, cursor: currentCursor ?? null, offset: canUseCursor ? 0 : (currentPage - 1) * pageSize }),
     enabled: queryEnabled,
     placeholderData: keepPreviousData,
+    staleTime: 60_000,
     retry: false,
   });
+  const totalCount = storesQuery.data?.total_count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const firstRow = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const lastRow = totalCount === 0 ? 0 : Math.min(currentPage * pageSize, totalCount);
+  const visiblePages = paginationItems(currentPage, totalPages);
+
+  useEffect(() => {
+    if (storesQuery.isPlaceholderData || !storesQuery.data?.next_cursor) return;
+    const nextPage = currentPage + 1;
+    const nextCursor = storesQuery.data.next_cursor;
+    setPageCursors((existing) => existing[nextPage] === nextCursor
+      ? existing
+      : { ...existing, [nextPage]: nextCursor });
+  }, [currentPage, storesQuery.data?.next_cursor, storesQuery.isPlaceholderData]);
+
+  useEffect(() => setPageInput(String(currentPage)), [currentPage]);
+
+  const jumpToPage = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const requestedPage = Number(pageInput);
+    if (!Number.isFinite(requestedPage)) {
+      setPageInput(String(currentPage));
+      return;
+    }
+    const nextPage = Math.min(totalPages, Math.max(1, Math.trunc(requestedPage)));
+    setPageInput(String(nextPage));
+    setCurrentPage(nextPage);
+  };
+
+  const resetPagination = () => {
+    setCurrentPage(1);
+    setPageCursors({ 1: null });
+  };
 
   const tableColumns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => selectedColumns.map((name) => {
     const meta = columns.find((column) => column.name === name)!;
@@ -300,7 +347,7 @@ export function App() {
     onSortingChange: (updater) => {
       const next = typeof updater === "function" ? updater(sorting) : updater;
       setSort(next.slice(0, 5).map((item) => ({ column: item.id, direction: item.desc ? "desc" : "asc" })));
-      setCursorHistory([null]);
+      resetPagination();
     },
     enableMultiSort: true,
   });
@@ -316,7 +363,7 @@ export function App() {
   const restoreView = (view: ExplorerView) => {
     setSelectedColumns(view.columns);
     setFilters(view.filters.map((filter) => ({ ...filter, id: crypto.randomUUID() })));
-    setSort(view.sort); setPageSize(view.pageSize); setCursorHistory([null]);
+    setSort(view.sort); setPageSize(view.pageSize); resetPagination();
   };
   const deleteView = (name: string) => {
     const next = savedViews.filter((view) => view.name !== name);
@@ -332,18 +379,18 @@ export function App() {
       <div className="page-heading"><div><span className="section-kicker">Store intelligence</span><h1>Explore every store.</h1><p>Shape a precise view across {columns.length} fields. Every query runs against the full dataset.</p></div><button className="button button--primary export-button" onClick={() => setShowExport(true)}><Icon name="export" /> Export</button></div>
       <div className="toolbar">
         <div className="toolbar-group">
-          <div className="relative"><button className={`button button--quiet ${showColumns ? "active" : ""}`} onClick={() => setShowColumns((value) => !value)}><Icon name="columns" /> Columns <span className="button-count">{selectedColumns.length}</span></button>{showColumns && <ColumnChooser columns={columns} selected={selectedColumns} onChange={(next) => { setSelectedColumns(next); setCursorHistory([null]); }} onClose={() => setShowColumns(false)} />}</div>
+          <div className="relative"><button className={`button button--quiet ${showColumns ? "active" : ""}`} onClick={() => setShowColumns((value) => !value)}><Icon name="columns" /> Columns <span className="button-count">{selectedColumns.length}</span></button>{showColumns && <ColumnChooser columns={columns} selected={selectedColumns} onChange={(next) => { setSelectedColumns(next); resetPagination(); }} onClose={() => setShowColumns(false)} />}</div>
           <button className={`button button--quiet ${showFilters || filters.length ? "active" : ""}`} onClick={() => setShowFilters((value) => !value)}><Icon name="filter" /> Filters {filters.length > 0 && <span className="button-count">{filters.length}</span>}</button>
           <button className="button button--quiet" onClick={() => setShowSave(true)}><Icon name="save" /> Save view</button>
         </div>
         {savedViews.length > 0 && <select className="saved-select" aria-label="Saved views" defaultValue="" onChange={(event) => { const view = savedViews.find((item) => item.name === event.target.value); if (view) restoreView(view); event.target.value = ""; }}><option value="" disabled>Open saved view…</option>{savedViews.map((view) => <option key={view.name} value={view.name}>{view.name}</option>)}</select>}
       </div>
-      {showFilters && <FiltersPanel columns={columns} filters={filters} onChange={(next) => { setFilters(next); setCursorHistory([null]); }} onClose={() => setShowFilters(false)} />}
-      {filters.length > 0 && <div className="filter-chips"><span>Active filters</span>{filters.map((filter) => { const column = columns.find((item) => item.name === filter.column)!; return <button key={filter.id} onClick={() => { setFilters(filters.filter((item) => item.id !== filter.id)); setCursorHistory([null]); }}>{column.label} {OPERATOR_LABELS[filter.operator]}{!NULL_OPERATORS.has(filter.operator) ? ` ${String(filter.value ?? "")}` : ""}<Icon name="close" /></button>; })}<button className="clear-all" onClick={() => { setFilters([]); setCursorHistory([null]); }}>Clear all</button></div>}
+      {showFilters && <FiltersPanel columns={columns} filters={filters} onChange={(next) => { setFilters(next); resetPagination(); }} onClose={() => setShowFilters(false)} />}
+      {filters.length > 0 && <div className="filter-chips"><span>Active filters</span>{filters.map((filter) => { const column = columns.find((item) => item.name === filter.column)!; return <button key={filter.id} onClick={() => { setFilters(filters.filter((item) => item.id !== filter.id)); resetPagination(); }}>{column.label} {OPERATOR_LABELS[filter.operator]}{!NULL_OPERATORS.has(filter.operator) ? ` ${String(filter.value ?? "")}` : ""}<Icon name="close" /></button>; })}<button className="clear-all" onClick={() => { setFilters([]); resetPagination(); }}>Clear all</button></div>}
       <section className="table-card">
-        <div className="table-status"><div><strong>{storesQuery.isPending ? "Loading stores…" : `${storesQuery.data?.rows.length ?? 0} stores on this page`}</strong><span>{cursorHistory.length > 1 ? `Page ${cursorHistory.length}` : "First page"}{storesQuery.isFetching && !storesQuery.isPending ? " · Refreshing" : ""}</span></div><label>Rows per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setCursorHistory([null]); }}>{PAGE_SIZES.map((size) => <option key={size}>{size}</option>)}</select></label></div>
-        <div className="table-scroll"><table><thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th key={header.id}><button disabled={!header.column.getCanSort()} onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<span className={`sort-mark ${header.column.getIsSorted() ? "sorted" : ""}`}>{header.column.getIsSorted() === "asc" ? "↑" : header.column.getIsSorted() === "desc" ? "↓" : "↕"}</span></button></th>)}</tr>)}</thead><tbody>{storesQuery.isError ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message table-error"><strong>Query failed</strong><span>{storesQuery.error.message}</span><button className="text-button" onClick={() => void storesQuery.refetch()}>Retry</button></div></td></tr> : storesQuery.isPending ? Array.from({ length: 8 }, (_, index) => <tr className="skeleton-row" key={index}>{selectedColumns.map((column) => <td key={column}><span /></td>)}</tr>) : table.getRowModel().rows.length === 0 ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message"><strong>No stores match this view</strong><span>Try removing a filter or broadening its value.</span></div></td></tr> : table.getRowModel().rows.map((row) => <tr key={row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id} title={String(cell.getValue() ?? "")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div>
-        <div className="pagination"><span>Page {cursorHistory.length}</span><div><button className="button button--quiet" disabled={cursorHistory.length === 1 || storesQuery.isFetching} onClick={() => setCursorHistory((items) => items.slice(0, -1))}>← Previous</button><button className="button button--quiet" disabled={!storesQuery.data?.next_cursor || storesQuery.isFetching} onClick={() => storesQuery.data?.next_cursor && setCursorHistory((items) => [...items, storesQuery.data.next_cursor])}>Next →</button></div></div>
+        <div className="table-status"><div><strong>{storesQuery.isPending ? "Loading stores…" : `${totalCount.toLocaleString()} stores`}</strong><span>{totalCount > 0 ? `Showing ${firstRow.toLocaleString()}–${lastRow.toLocaleString()}` : "No results"}{storesQuery.isFetching && !storesQuery.isPending ? " · Updating…" : ""}</span></div><label>Rows per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPagination(); }}>{PAGE_SIZES.map((size) => <option key={size}>{size}</option>)}</select></label></div>
+        <div className="table-viewport"><div className="table-scroll" aria-busy={storesQuery.isFetching}><table><thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th key={header.id}><button disabled={!header.column.getCanSort()} onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<span className={`sort-mark ${header.column.getIsSorted() ? "sorted" : ""}`}>{header.column.getIsSorted() === "asc" ? "↑" : header.column.getIsSorted() === "desc" ? "↓" : "↕"}</span></button></th>)}</tr>)}</thead><tbody>{storesQuery.isError ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message table-error"><strong>Query failed</strong><span>{storesQuery.error.message}</span><button className="text-button" onClick={() => void storesQuery.refetch()}>Retry</button></div></td></tr> : storesQuery.isPending ? Array.from({ length: 8 }, (_, index) => <tr className="skeleton-row" key={index}>{selectedColumns.map((column) => <td key={column}><span /></td>)}</tr>) : table.getRowModel().rows.length === 0 ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message"><strong>No stores match this view</strong><span>Try removing a filter or broadening its value.</span></div></td></tr> : table.getRowModel().rows.map((row) => <tr key={row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id} title={String(cell.getValue() ?? "")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div>{storesQuery.isFetching && !storesQuery.isPending && <div className="table-loading" role="status"><div className="loader"/><span>Loading page {currentPage}…</span></div>}</div>
+        <nav className="pagination" aria-label="Store results pagination"><div className="pagination-summary"><span>Page {currentPage.toLocaleString()} of {totalPages.toLocaleString()}</span><form className="page-jump" onSubmit={jumpToPage}><label htmlFor="page-jump-input">Jump to</label><input id="page-jump-input" type="number" min="1" max={totalPages} inputMode="numeric" value={pageInput} disabled={storesQuery.isFetching || totalCount === 0} onChange={(event) => setPageInput(event.target.value)} onBlur={() => !pageInput && setPageInput(String(currentPage))}/><button className="button button--quiet" type="submit" disabled={storesQuery.isFetching || totalCount === 0 || !pageInput}>Go</button></form></div><div className="pagination-controls"><button className="button button--quiet pagination-step" disabled={currentPage === 1 || storesQuery.isFetching} onClick={() => setCurrentPage((page) => page - 1)}>← Previous</button><div className="page-numbers">{visiblePages.map((item, index) => item === "ellipsis" ? <span className="page-ellipsis" key={`ellipsis-${index}`}>…</span> : <button className={`page-number ${item === currentPage ? "active" : ""}`} key={item} aria-label={`Go to page ${item}`} aria-current={item === currentPage ? "page" : undefined} disabled={storesQuery.isFetching} onClick={() => setCurrentPage(item)}>{item}</button>)}</div><button className="button button--quiet pagination-step" disabled={currentPage === totalPages || storesQuery.isFetching || totalCount === 0} onClick={() => setCurrentPage((page) => page + 1)}>Next →</button></div></nav>
       </section>
     </main>
     {showSave && <Modal title="Save this view" onClose={() => setShowSave(false)}><p className="modal-copy">Save the {selectedColumns.length} visible columns, {filters.length} filters, sorting, and page size in this browser.</p><label className="field-label">View name<input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveView()} placeholder="e.g. High-traffic US stores" /></label>{savedViews.length > 0 && <div className="saved-list"><span>Saved views</span>{savedViews.map((view) => <div key={view.name}><button className="saved-name" onClick={() => { restoreView(view); setShowSave(false); }}>{view.name}</button><button className="icon-button" onClick={() => deleteView(view.name)} aria-label={`Delete ${view.name}`}><Icon name="close" /></button></div>)}</div>}<div className="modal-actions"><button className="button button--quiet" onClick={() => setShowSave(false)}>Cancel</button><button className="button button--primary" disabled={!viewName.trim()} onClick={saveView}>Save view</button></div></Modal>}

@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Request, status
@@ -31,10 +30,7 @@ def health() -> HealthResponse:
 
 
 def _service(request: Request) -> QueryService:
-    return QueryService(
-        Path(request.app.state.database_path),
-        timeout_seconds=request.app.state.query_timeout_seconds,
-    )
+    return request.app.state.query_service
 
 
 @api_router.get("/schema", response_model=SchemaResponse, tags=["data"])

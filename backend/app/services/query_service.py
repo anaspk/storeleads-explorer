@@ -8,6 +8,7 @@ import json
 import math
 import re
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -38,6 +39,7 @@ MAX_LIST_VALUES = 100
 # even though their warm executions are much faster. Keep a bounded execution
 # time without cancelling known-valid interactive workloads prematurely.
 DEFAULT_TIMEOUT_SECONDS = 30.0
+COUNT_CACHE_SIZE = 128
 
 
 class QueryAPIError(RuntimeError):
@@ -432,6 +434,32 @@ class QueryService:
     ) -> None:
         self.database = Path(database)
         self.timeout_seconds = timeout_seconds
+        self._count_cache: OrderedDict[tuple[object, ...], int] = OrderedDict()
+        self._count_cache_lock = threading.Lock()
+
+    def _count(self, where: CompiledWhere) -> int:
+        try:
+            database_stat = self.database.stat()
+        except OSError:
+            database_signature = (0, 0)
+        else:
+            database_signature = (database_stat.st_mtime_ns, database_stat.st_size)
+        cache_key = (*database_signature, where.sql, *where.parameters)
+        with self._count_cache_lock:
+            cached = self._count_cache.get(cache_key)
+            if cached is not None:
+                self._count_cache.move_to_end(cache_key)
+                return cached
+
+        count_sql = f"SELECT count(*) FROM stores s WHERE ({where.sql})"
+        _, records = self._execute(count_sql, list(where.parameters))
+        total_count = int(records[0][0])
+        with self._count_cache_lock:
+            self._count_cache[cache_key] = total_count
+            self._count_cache.move_to_end(cache_key)
+            while len(self._count_cache) > COUNT_CACHE_SIZE:
+                self._count_cache.popitem(last=False)
+        return total_count
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         if not self.database.is_file():
@@ -487,6 +515,7 @@ class QueryService:
         selected = _validate_columns(request.columns)
         sort = _validated_sort(request.sort)
         where = compile_filters(request.filters)
+        total_count = self._count(where)
         where_parts = [where.sql]
         parameters = list(where.parameters)
         if request.cursor:
@@ -506,9 +535,10 @@ class QueryService:
         sql = (
             f"SELECT {projection} FROM stores s WHERE "
             + " AND ".join(f"({part})" for part in where_parts)
-            + f" ORDER BY {order} LIMIT ?"
+            + f" ORDER BY {order} LIMIT ? OFFSET ?"
         )
         parameters.append(request.limit + 1)
+        parameters.append(request.offset)
         names, records = self._execute(sql, parameters)
         materialized = [dict(zip(names, row, strict=True)) for row in records]
         has_more = len(materialized) > request.limit
@@ -521,7 +551,9 @@ class QueryService:
         rows = [
             {column: row[column] for column in selected} for row in materialized
         ]
-        return QueryResponse(rows=rows, next_cursor=next_cursor)
+        return QueryResponse(
+            rows=rows, next_cursor=next_cursor, total_count=total_count
+        )
 
     def facets(self, request: FacetRequest) -> FacetResponse:
         definition = _column(request.column)

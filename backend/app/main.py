@@ -10,7 +10,11 @@ from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.services.export_service import ExportManager
-from app.services.query_service import DEFAULT_TIMEOUT_SECONDS, QueryAPIError
+from app.services.query_service import (
+    DEFAULT_TIMEOUT_SECONDS,
+    QueryAPIError,
+    QueryService,
+)
 
 
 @asynccontextmanager
@@ -51,6 +55,10 @@ def create_app(
         os.environ.get("STORELEADS_EXPORT_DIR", default_export_dir)
     )
     application.state.query_timeout_seconds = query_timeout_seconds
+    application.state.query_service = QueryService(
+        application.state.database_path,
+        timeout_seconds=query_timeout_seconds,
+    )
 
     @application.exception_handler(QueryAPIError)
     async def query_error_handler(_: Request, error: QueryAPIError) -> JSONResponse:
