@@ -54,7 +54,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .check-row span { display: flex; flex: 1; justify-content: space-between; align-items: center; gap: 12px; }
 .check-row b { font-size: 13px; font-weight: 500; }
 .check-row small { color: #8b968f; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
-.popover-actions { border-top: 1px solid #edf0ec; margin-top: 10px; padding-top: 12px; display: flex; justify-content: space-between; }
+.popover-actions { border-top: 1px solid #edf0ec; margin-top: 10px; padding-top: 12px; display: flex; justify-content: flex-end; }
 .text-button { border: 0; background: none; color: #32704c; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px; }
 .filter-panel { border: 1px solid #d9e0d8; border-radius: 12px; padding: 20px; margin-bottom: 14px; background: #fafbf8; box-shadow: 0 7px 24px rgb(50 67 55 / 5%); }
 .panel-heading h2 { margin: 4px 0 0; font: 600 17px Manrope, sans-serif; }
@@ -82,13 +82,21 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .table-status select { border: 1px solid #d9dfd9; border-radius: 7px; background: #fff; padding: 5px 24px 5px 8px; font-size: 12px; }
 .table-viewport { position: relative; }
 .table-scroll { overflow: auto; min-height: 420px; max-height: calc(100vh - 320px); }
-table { width: 100%; border-collapse: separate; border-spacing: 0; white-space: nowrap; }
-th { position: sticky; top: 0; z-index: 2; padding: 0; background: #f7f9f6; border-bottom: 1px solid #dfe5de; text-align: left; }
-th button { width: 100%; min-width: 150px; height: 43px; display: flex; align-items: center; gap: 7px; border: 0; background: none; padding: 0 15px; color: #66736b; font-size: 10px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; cursor: pointer; }
+table { table-layout: fixed; border-collapse: separate; border-spacing: 0; white-space: nowrap; }
+th { position: sticky; top: 0; z-index: 2; padding: 0; background: #f7f9f6; border-bottom: 1px solid #dfe5de; text-align: left; transition: background-color 120ms ease, opacity 120ms ease; }
+th[draggable="true"] { cursor: grab; }
+th.column-dragging { opacity: .48; }
+th.column-drag-over { background: #e8f1e8; box-shadow: inset 3px 0 #43805c; }
+th button { width: 100%; height: 43px; display: flex; align-items: center; gap: 7px; overflow: hidden; border: 0; background: none; padding: 0 15px; color: #66736b; font-size: 10px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
 th button:disabled { cursor: default; }
+.column-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sort-mark { flex: 0 0 auto; }
+.column-resizer { position: absolute; top: 0; right: -4px; z-index: 3; width: 8px; height: 100%; cursor: col-resize; touch-action: none; user-select: none; }
+.column-resizer::after { content: ""; position: absolute; top: 9px; right: 3px; width: 1px; height: 25px; background: #cdd5ce; }
+.column-resizer:hover::after, .column-resizer.is-resizing::after { width: 2px; background: #43805c; }
 .sort-mark { color: #abb4ae; font-size: 12px; }
 .sort-mark.sorted { color: #23603c; }
-td { max-width: 360px; height: 48px; padding: 0 15px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid #eef1ed; color: #303c34; font-size: 12.5px; }
+td { height: 48px; padding: 0 15px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid #eef1ed; color: #303c34; font-size: 12.5px; }
 tbody tr:hover td { background: #f9fbf8; }
 .null-value { color: #a7afa9; }
 .pagination { min-height: 62px; display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-top: 1px solid #e4e8e3; }

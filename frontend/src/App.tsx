@@ -2,13 +2,17 @@ import {
   flexRender,
   getCoreRowModel,
   type ColumnDef,
+  type ColumnOrderState,
+  type ColumnSizingState,
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -25,8 +29,12 @@ import type {
 } from "./types";
 
 const PAGE_SIZES = [25, 50, 100, 200];
+const MIN_COLUMN_WIDTH = 72;
+const HEADER_WIDTH_PER_CHARACTER = 6.6;
+const HEADER_CONTROLS_WIDTH = 54;
 const SAVED_VIEWS_KEY = "storeleads:saved-views:v1";
 const WORKSPACE_KEY = "storeleads:workspace:v1";
+const COLUMN_ORDER_KEY = "storeleads:column-order:v1";
 const NULL_OPERATORS = new Set(["is_null", "is_not_null"]);
 const LIST_OPERATORS = new Set(["in", "not_in", "between", "has_any", "has_all"]);
 
@@ -79,6 +87,60 @@ function readJson<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function reorderColumns(columns: string[], dragged: string, target: string): string[] {
+  if (dragged === target) return columns;
+  const from = columns.indexOf(dragged);
+  const to = columns.indexOf(target);
+  if (from === -1 || to === -1) return columns;
+  const next = [...columns];
+  next.splice(from, 1);
+  next.splice(to, 0, dragged);
+  return next;
+}
+
+function initialColumnWidth(label: string): number {
+  return Math.max(MIN_COLUMN_WIDTH, Math.ceil(label.length * HEADER_WIDTH_PER_CHARACTER + HEADER_CONTROLS_WIDTH));
+}
+
+function ColumnResizer({ label, size, onResize, onAutoFit }: {
+  label: string;
+  size: number;
+  onResize: (size: number) => void;
+  onAutoFit: (header: HTMLTableCellElement) => void;
+}) {
+  const dragStart = useRef<{ x: number; size: number } | null>(null);
+  const [resizing, setResizing] = useState(false);
+
+  return <span
+    className={`column-resizer ${resizing ? "is-resizing" : ""}`}
+    draggable={false}
+    role="separator"
+    aria-label={`Resize ${label} column`}
+    onPointerDown={(event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dragStart.current = { x: event.clientX, size };
+      setResizing(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }}
+    onPointerMove={(event) => {
+      if (!dragStart.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+      onResize(Math.max(MIN_COLUMN_WIDTH, dragStart.current.size + event.clientX - dragStart.current.x));
+    }}
+    onPointerUp={(event) => {
+      dragStart.current = null;
+      setResizing(false);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    }}
+    onPointerCancel={() => { dragStart.current = null; setResizing(false); }}
+    onLostPointerCapture={() => { dragStart.current = null; setResizing(false); }}
+    onDoubleClick={(event) => {
+      event.stopPropagation();
+      onAutoFit(event.currentTarget.parentElement as HTMLTableCellElement);
+    }}
+  />;
 }
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -148,7 +210,7 @@ function ColumnChooser({ columns, selected, onChange, onClose }: {
     <div className="popover-title"><div><strong>Visible columns</strong><span>{selected.length} of {columns.length} selected</span></div><button className="icon-button" onClick={onClose} aria-label="Close column chooser"><Icon name="close" /></button></div>
     <label className="search-field"><Icon name="search" /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search 150 fields…" /></label>
     <div className="column-list">{visible.map((column) => <label key={column.name} className="check-row"><input type="checkbox" checked={selected.includes(column.name)} onChange={() => toggle(column.name)} /><span><b>{column.label}</b><small>{column.data_type}</small></span></label>)}</div>
-    <div className="popover-actions"><button className="text-button" onClick={() => onChange(columns.filter((column) => column.default_visible).map((column) => column.name))}>Reset defaults</button><button className="button button--primary" onClick={onClose}>Done</button></div>
+    <div className="popover-actions"><button className="button button--primary" onClick={onClose}>Done</button></div>
   </div>;
 }
 
@@ -267,13 +329,24 @@ export function App() {
   const [viewName, setViewName] = useState("");
   const [savedViews, setSavedViews] = useState<ExplorerView[]>(() => readJson(SAVED_VIEWS_KEY, []));
   const [hydrated, setHydrated] = useState(false);
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const tableScrollRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!columns.length || hydrated) return;
     const stored = readJson<Partial<ExplorerView> | null>(WORKSPACE_KEY, null);
     const validNames = new Set(columns.map((column) => column.name));
     const storedColumns = stored?.columns?.filter((name) => validNames.has(name)) ?? [];
-    setSelectedColumns(storedColumns.length ? storedColumns : columns.filter((column) => column.default_visible).map((column) => column.name));
+    const selected = storedColumns.length ? storedColumns : columns.filter((column) => column.default_visible).map((column) => column.name);
+    const persistedOrder = readJson<string[]>(COLUMN_ORDER_KEY, []).filter((name) => validNames.has(name));
+    setSelectedColumns(selected);
+    setColumnOrder([
+      ...persistedOrder.filter((name) => selected.includes(name)),
+      ...selected.filter((name) => !persistedOrder.includes(name)),
+    ]);
     setFilters(stored?.filters?.filter((filter) => validNames.has(filter.column)) ?? []);
     setSort(stored?.sort?.filter((item) => validNames.has(item.column)) ?? []);
     setPageSize(PAGE_SIZES.includes(stored?.pageSize ?? 0) ? stored!.pageSize! : 50);
@@ -284,6 +357,29 @@ export function App() {
     if (!hydrated) return;
     localStorage.setItem(WORKSPACE_KEY, JSON.stringify({ name: "Current workspace", columns: selectedColumns, filters, sort, pageSize } satisfies ExplorerView));
   }, [hydrated, selectedColumns, filters, sort, pageSize]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    setColumnOrder((current) => [
+      ...current.filter((name) => selectedColumns.includes(name)),
+      ...selectedColumns.filter((name) => !current.includes(name)),
+    ]);
+  }, [hydrated, selectedColumns]);
+
+  useEffect(() => {
+    if (!hydrated || !columnOrder.length) return;
+    localStorage.setItem(COLUMN_ORDER_KEY, JSON.stringify(columnOrder));
+  }, [columnOrder, hydrated]);
+
+  useLayoutEffect(() => {
+    if (!hydrated || !selectedColumns.length) return;
+    const labels = new Map(columns.map((column) => [column.name, column.label]));
+    const naturalWidths = selectedColumns.map((name) => [name, initialColumnWidth(labels.get(name) ?? name)] as const);
+    const naturalTotal = naturalWidths.reduce((total, [, width]) => total + width, 0);
+    const availableWidth = tableScrollRef.current?.clientWidth ?? naturalTotal;
+    const extraPerColumn = Math.max(0, availableWidth - naturalTotal) / naturalWidths.length;
+    setColumnSizing(Object.fromEntries(naturalWidths.map(([name, width]) => [name, width + extraPerColumn])));
+  }, [columns, hydrated, selectedColumns]);
 
   const debouncedFilters = useDebouncedValue(filters, 350);
   const readyFilters = useMemo<QueryFilter[]>(() => debouncedFilters.filter(isReady).map(({ id: _id, ...filter }) => {
@@ -338,19 +434,37 @@ export function App() {
 
   const tableColumns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => selectedColumns.map((name) => {
     const meta = columns.find((column) => column.name === name)!;
-    return { accessorKey: name, header: meta.label, cell: (context) => <span className={context.getValue() == null ? "null-value" : ""}>{formatCell(context.getValue(), meta.data_type)}</span>, enableSorting: meta.sortable };
+    return { accessorKey: name, header: meta.label, size: initialColumnWidth(meta.label), cell: (context) => <span className={context.getValue() == null ? "null-value" : ""}>{formatCell(context.getValue(), meta.data_type)}</span>, enableSorting: meta.sortable };
   }), [columns, selectedColumns]);
   const sorting: SortingState = sort.map((item) => ({ id: item.column, desc: item.direction === "desc" }));
   const table = useReactTable({
     data: storesQuery.data?.rows ?? [], columns: tableColumns,
-    getCoreRowModel: getCoreRowModel(), manualSorting: true, state: { sorting },
+    getCoreRowModel: getCoreRowModel(), manualSorting: true, state: { sorting, columnSizing, columnOrder },
     onSortingChange: (updater) => {
       const next = typeof updater === "function" ? updater(sorting) : updater;
       setSort(next.slice(0, 5).map((item) => ({ column: item.id, direction: item.desc ? "desc" : "asc" })));
       resetPagination();
     },
+    onColumnSizingChange: setColumnSizing,
+    onColumnOrderChange: setColumnOrder,
+    columnResizeMode: "onChange",
+    defaultColumn: { size: 150, minSize: MIN_COLUMN_WIDTH, maxSize: Number.MAX_SAFE_INTEGER },
     enableMultiSort: true,
   });
+
+  const autoFitColumn = (columnId: string, headerElement: HTMLTableCellElement) => {
+    const headerButton = headerElement.querySelector<HTMLButtonElement>(".column-sort");
+    const headerLabel = headerButton?.querySelector<HTMLElement>(".column-label");
+    const sortMark = headerButton?.querySelector<HTMLElement>(".sort-mark");
+    const buttonStyle = headerButton ? window.getComputedStyle(headerButton) : null;
+    const headerWidth = (headerLabel?.scrollWidth ?? 0)
+      + (sortMark?.scrollWidth ?? 0)
+      + Number.parseFloat(buttonStyle?.paddingLeft ?? "0")
+      + Number.parseFloat(buttonStyle?.paddingRight ?? "0")
+      + Number.parseFloat(buttonStyle?.columnGap || buttonStyle?.gap || "0");
+    const bodyWidths = Array.from(document.querySelectorAll<HTMLElement>(`td[data-column-id="${CSS.escape(columnId)}"]`), (cell) => cell.scrollWidth);
+    setColumnSizing((current) => ({ ...current, [columnId]: Math.max(MIN_COLUMN_WIDTH, Math.ceil(Math.max(headerWidth, ...bodyWidths))) }));
+  };
 
   const saveView = () => {
     const name = viewName.trim();
@@ -387,9 +501,9 @@ export function App() {
       </div>
       {showFilters && <FiltersPanel columns={columns} filters={filters} onChange={(next) => { setFilters(next); resetPagination(); }} onClose={() => setShowFilters(false)} />}
       {filters.length > 0 && <div className="filter-chips"><span>Active filters</span>{filters.map((filter) => { const column = columns.find((item) => item.name === filter.column)!; return <button key={filter.id} onClick={() => { setFilters(filters.filter((item) => item.id !== filter.id)); resetPagination(); }}>{column.label} {OPERATOR_LABELS[filter.operator]}{!NULL_OPERATORS.has(filter.operator) ? ` ${String(filter.value ?? "")}` : ""}<Icon name="close" /></button>; })}<button className="clear-all" onClick={() => { setFilters([]); resetPagination(); }}>Clear all</button></div>}
-      <section className="table-card">
+      <section className="table-card" ref={tableScrollRef}>
         <div className="table-status"><div><strong>{storesQuery.isPending ? "Loading stores…" : `${totalCount.toLocaleString()} stores`}</strong><span>{totalCount > 0 ? `Showing ${firstRow.toLocaleString()}–${lastRow.toLocaleString()}` : "No results"}{storesQuery.isFetching && !storesQuery.isPending ? " · Updating…" : ""}</span></div><label>Rows per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPagination(); }}>{PAGE_SIZES.map((size) => <option key={size}>{size}</option>)}</select></label></div>
-        <div className="table-viewport"><div className="table-scroll" aria-busy={storesQuery.isFetching}><table><thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th key={header.id}><button disabled={!header.column.getCanSort()} onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<span className={`sort-mark ${header.column.getIsSorted() ? "sorted" : ""}`}>{header.column.getIsSorted() === "asc" ? "↑" : header.column.getIsSorted() === "desc" ? "↓" : "↕"}</span></button></th>)}</tr>)}</thead><tbody>{storesQuery.isError ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message table-error"><strong>Query failed</strong><span>{storesQuery.error.message}</span><button className="text-button" onClick={() => void storesQuery.refetch()}>Retry</button></div></td></tr> : storesQuery.isPending ? Array.from({ length: 8 }, (_, index) => <tr className="skeleton-row" key={index}>{selectedColumns.map((column) => <td key={column}><span /></td>)}</tr>) : table.getRowModel().rows.length === 0 ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message"><strong>No stores match this view</strong><span>Try removing a filter or broadening its value.</span></div></td></tr> : table.getRowModel().rows.map((row) => <tr key={row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id} title={String(cell.getValue() ?? "")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div>{storesQuery.isFetching && !storesQuery.isPending && <div className="table-loading" role="status"><div className="loader"/><span>Loading page {currentPage}…</span></div>}</div>
+        <div className="table-viewport"><div className="table-scroll" aria-busy={storesQuery.isFetching}><table style={{ width: Math.max(table.getTotalSize(), 1) }}><thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th className={`${draggedColumn === header.column.id ? "column-dragging" : ""} ${dragOverColumn === header.column.id ? "column-drag-over" : ""}`} draggable style={{ width: header.getSize() }} key={header.id} onDragStart={(event) => { setDraggedColumn(header.column.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", header.column.id); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverColumn(header.column.id); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverColumn(null); }} onDrop={(event) => { event.preventDefault(); const source = draggedColumn ?? event.dataTransfer.getData("text/plain"); setColumnOrder((current) => reorderColumns(current, source, header.column.id)); setDraggedColumn(null); setDragOverColumn(null); }} onDragEnd={() => { setDraggedColumn(null); setDragOverColumn(null); }}><button className="column-sort" disabled={!header.column.getCanSort()} onClick={header.column.getToggleSortingHandler()}><span className="column-label">{flexRender(header.column.columnDef.header, header.getContext())}</span><span className={`sort-mark ${header.column.getIsSorted() ? "sorted" : ""}`}>{header.column.getIsSorted() === "asc" ? "↑" : header.column.getIsSorted() === "desc" ? "↓" : "↕"}</span></button><ColumnResizer label={String(header.column.columnDef.header)} size={header.getSize()} onResize={(size) => setColumnSizing((current) => ({ ...current, [header.column.id]: size }))} onAutoFit={(element) => autoFitColumn(header.column.id, element)} /></th>)}</tr>)}</thead><tbody>{storesQuery.isError ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message table-error"><strong>Query failed</strong><span>{storesQuery.error.message}</span><button className="text-button" onClick={() => void storesQuery.refetch()}>Retry</button></div></td></tr> : storesQuery.isPending ? Array.from({ length: 8 }, (_, index) => <tr className="skeleton-row" key={index}>{table.getVisibleLeafColumns().map((column) => <td data-column-id={column.id} style={{ width: column.getSize() }} key={column.id}><span /></td>)}</tr>) : table.getRowModel().rows.length === 0 ? <tr><td colSpan={Math.max(selectedColumns.length, 1)}><div className="table-message"><strong>No stores match this view</strong><span>Try removing a filter or broadening its value.</span></div></td></tr> : table.getRowModel().rows.map((row) => <tr key={row.id}>{row.getVisibleCells().map((cell) => <td data-column-id={cell.column.id} style={{ width: cell.column.getSize() }} key={cell.id} title={String(cell.getValue() ?? "")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div>{storesQuery.isFetching && !storesQuery.isPending && <div className="table-loading" role="status"><div className="loader"/><span>Loading page {currentPage}…</span></div>}</div>
         <nav className="pagination" aria-label="Store results pagination"><div className="pagination-summary"><span>Page {currentPage.toLocaleString()} of {totalPages.toLocaleString()}</span><form className="page-jump" onSubmit={jumpToPage}><label htmlFor="page-jump-input">Jump to</label><input id="page-jump-input" type="number" min="1" max={totalPages} inputMode="numeric" value={pageInput} disabled={storesQuery.isFetching || totalCount === 0} onChange={(event) => setPageInput(event.target.value)} onBlur={() => !pageInput && setPageInput(String(currentPage))}/><button className="button button--quiet" type="submit" disabled={storesQuery.isFetching || totalCount === 0 || !pageInput}>Go</button></form></div><div className="pagination-controls"><button className="button button--quiet pagination-step" disabled={currentPage === 1 || storesQuery.isFetching} onClick={() => setCurrentPage((page) => page - 1)}>← Previous</button><div className="page-numbers">{visiblePages.map((item, index) => item === "ellipsis" ? <span className="page-ellipsis" key={`ellipsis-${index}`}>…</span> : <button className={`page-number ${item === currentPage ? "active" : ""}`} key={item} aria-label={`Go to page ${item}`} aria-current={item === currentPage ? "page" : undefined} disabled={storesQuery.isFetching} onClick={() => setCurrentPage(item)}>{item}</button>)}</div><button className="button button--quiet pagination-step" disabled={currentPage === totalPages || storesQuery.isFetching || totalCount === 0} onClick={() => setCurrentPage((page) => page + 1)}>Next →</button></div></nav>
       </section>
     </main>
