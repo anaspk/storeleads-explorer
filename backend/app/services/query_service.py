@@ -157,6 +157,10 @@ def _typed_values(definition, values: list[Any], column: str, operator: str):
     return [_typed_value(definition, value, column, operator) for value in values]
 
 
+def _escape_like(value: Any) -> str:
+    return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _compile_condition(condition: FilterCondition) -> CompiledWhere:
     definition = _column(condition.column)
     operator = condition.operator
@@ -261,7 +265,7 @@ def _compile_condition(condition: FilterCondition) -> CompiledWhere:
     }
     if operator in comparisons:
         return CompiledWhere(f"{identifier} {comparisons[operator]} ?", [value])
-    escaped = str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    escaped = _escape_like(value)
     patterns = {
         "contains": f"%{escaped}%",
         "not_contains": f"%{escaped}%",
@@ -563,20 +567,42 @@ class QueryService:
             )
         where = compile_filters(request.filters)
         parameters = list(where.parameters)
+        search = request.search.strip() if request.search else ""
+        search_pattern = f"%{_escape_like(search)}%" if search else None
         if definition.collection_table:
             child = _identifier(definition.collection_table)
+            search_sql = " AND c.value ILIKE ? ESCAPE '\\'" if search_pattern else ""
+            # Import guarantees one row per (store_id, value), so count(*) is
+            # the distinct store count without an expensive hash-distinct over
+            # multi-million-row collection tables.
+            if request.filters:
+                source = f"{child} c JOIN stores s ON s.store_id = c.store_id"
+                where_sql = where.sql
+            else:
+                # The option picker requests global values. Avoid joining every
+                # collection row back to the four-million-row stores table.
+                source = f"{child} c"
+                where_sql = "TRUE"
             sql = (
-                f"SELECT c.value, count(DISTINCT c.store_id) AS count FROM {child} c "
-                f"JOIN stores s ON s.store_id = c.store_id WHERE {where.sql} "
-                "GROUP BY c.value ORDER BY count DESC, c.value ASC LIMIT ?"
+                f"SELECT c.value, count(*) AS count FROM {source} "
+                f"WHERE {where_sql}{search_sql} GROUP BY c.value "
+                "ORDER BY count DESC, c.value ASC LIMIT ?"
             )
         else:
             identifier = f"s.{_identifier(request.column)}"
+            search_sql = (
+                f" AND CAST({identifier} AS VARCHAR) ILIKE ? ESCAPE '\\'"
+                if search_pattern
+                else ""
+            )
             sql = (
                 f"SELECT {identifier}, count(*) AS count FROM stores s "
-                f"WHERE {where.sql} GROUP BY {identifier} "
+                f"WHERE {where.sql} AND {identifier} IS NOT NULL{search_sql} "
+                f"GROUP BY {identifier} "
                 f"ORDER BY count DESC, {identifier} ASC NULLS LAST LIMIT ?"
             )
+        if search_pattern:
+            parameters.append(search_pattern)
         parameters.append(request.limit)
         _, records = self._execute(sql, parameters)
         return FacetResponse(

@@ -50,6 +50,7 @@ class QueryResponse(APIModel):
 class FacetRequest(APIModel):
     column: str
     filters: list[FilterNode] = Field(default_factory=list)
+    search: str | None = Field(default=None, max_length=200)
     limit: int = Field(default=20, ge=1, le=100)
 
 

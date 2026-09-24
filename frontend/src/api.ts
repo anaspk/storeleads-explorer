@@ -1,4 +1,4 @@
-import type { ApiErrorBody, ExportJob, ExportRequest, QueryRequest, QueryResponse, SchemaResponse } from "./types";
+import type { ApiErrorBody, ExportJob, ExportRequest, FacetResponse, QueryFilterNode, QueryRequest, QueryResponse, SchemaResponse } from "./types";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -24,6 +24,14 @@ export function queryStores(payload: QueryRequest): Promise<QueryResponse> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export function getFacet(column: string, search = "", filters: QueryFilterNode[] = []): Promise<FacetResponse> {
+  return requestJson<FacetResponse>("/api/facets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ column, search: search || undefined, filters, limit: 100 }),
   });
 }
 

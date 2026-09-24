@@ -24,6 +24,9 @@ export type SchemaResponse = {
   columns: SchemaColumn[];
 };
 
+export type FacetValue = { value: unknown; count: number };
+export type FacetResponse = { column: string; values: FacetValue[] };
+
 export type FilterCondition = {
   id: string;
   column: string;
@@ -31,12 +34,25 @@ export type FilterCondition = {
   value?: unknown;
 };
 
+export type FilterCombinator = "and" | "or";
+export type FilterGroup = {
+  id: string;
+  combinator: FilterCombinator;
+  filters: FilterNode[];
+};
+export type FilterNode = FilterCondition | FilterGroup;
+
 export type QueryFilter = Omit<FilterCondition, "id">;
+export type QueryFilterGroup = {
+  combinator: FilterCombinator;
+  filters: QueryFilterNode[];
+};
+export type QueryFilterNode = QueryFilter | QueryFilterGroup;
 export type SortSpec = { column: string; direction: "asc" | "desc" };
 
 export type QueryRequest = {
   columns: string[];
-  filters: QueryFilter[];
+  filters: QueryFilterNode[];
   sort: SortSpec[];
   limit: number;
   cursor: string | null;
@@ -68,7 +84,8 @@ export type ExportJob = {
 export type ExplorerView = {
   name: string;
   columns: string[];
-  filters: FilterCondition[];
+  filters: FilterNode[];
+  filterCombinator?: FilterCombinator;
   sort: SortSpec[];
   pageSize: number;
 };

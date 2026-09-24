@@ -436,6 +436,10 @@ def _create_collections(
             WHERE {_quote_identifier(column)} IS NOT NULL
               AND trim({_quote_identifier(column)}) <> ''
               AND trim(parts.value) <> ''
+            QUALIFY row_number() OVER (
+                PARTITION BY stores.store_id, trim(parts.value)
+                ORDER BY parts.ordinal
+            ) = 1
             """
         )
         actual = connection.execute(

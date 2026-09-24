@@ -339,6 +339,28 @@ def test_facets_respect_filters_and_collection_values(client: TestClient) -> Non
     ]
 
 
+def test_facets_support_case_insensitive_literal_search(client: TestClient) -> None:
+    collection = client.post(
+        "/api/facets",
+        json={"column": "technologies", "search": "commerce", "limit": 10},
+    )
+    scalar = client.post(
+        "/api/facets",
+        json={"column": "status", "search": "ACT", "limit": 10},
+    )
+    escaped_wildcard = client.post(
+        "/api/facets",
+        json={"column": "technologies", "search": "%", "limit": 10},
+    )
+
+    assert collection.json()["values"] == [{"value": "WooCommerce", "count": 2}]
+    assert scalar.json()["values"] == [
+        {"value": "active", "count": 2},
+        {"value": "inactive", "count": 1},
+    ]
+    assert escaped_wildcard.json()["values"] == []
+
+
 def test_missing_database_is_a_structured_service_error(tmp_path: Path) -> None:
     with TestClient(
         create_app(
