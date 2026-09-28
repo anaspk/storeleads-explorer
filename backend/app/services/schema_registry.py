@@ -40,6 +40,7 @@ ORDERED_OPERATORS = (
 BOOLEAN_OPERATORS = ("eq", "neq", *NULL_OPERATORS)
 UUID_OPERATORS = ("eq", "neq", "in", "not_in")
 COLLECTION_OPERATORS = ("has", "has_any", "has_all", *NULL_OPERATORS)
+CATEGORY_OPERATORS = ("has", "has_any", "has_none", "has_all", *NULL_OPERATORS)
 
 DEFAULT_COLUMNS = {
     "domain",
@@ -135,7 +136,9 @@ def _build_registry() -> dict[str, ColumnDefinition]:
             data_type = "string"
         else:
             data_type = _type_for(name)
-        operators = _operators_for(data_type)
+        operators = (
+            CATEGORY_OPERATORS if name == "categories" else _operators_for(data_type)
+        )
         if name in {"title", "description"}:
             operators = (*operators, "matches_token")
         registry[name] = ColumnDefinition(

@@ -40,6 +40,7 @@ MAX_LIST_VALUES = 100
 # time without cancelling known-valid interactive workloads prematurely.
 DEFAULT_TIMEOUT_SECONDS = 30.0
 COUNT_CACHE_SIZE = 128
+CATEGORY_COLUMN = "categories"
 
 
 class QueryAPIError(RuntimeError):
@@ -161,6 +162,15 @@ def _escape_like(value: Any) -> str:
     return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _category_match(identifier: str) -> str:
+    """Match a category path itself or any path below it."""
+    return f"({identifier} = ? OR starts_with({identifier}, ?))"
+
+
+def _category_parameters(value: str) -> list[str]:
+    return [value, f"{value}/"]
+
+
 def _compile_condition(condition: FilterCondition) -> CompiledWhere:
     definition = _column(condition.column)
     operator = condition.operator
@@ -191,6 +201,13 @@ def _compile_condition(condition: FilterCondition) -> CompiledWhere:
                 condition.column,
                 operator,
             )
+            if condition.column == CATEGORY_COLUMN:
+                match = _category_match("c.value")
+                return CompiledWhere(
+                    f"EXISTS (SELECT 1 FROM {child} c "
+                    f"WHERE c.store_id = s.store_id AND {match})",
+                    _category_parameters(value),
+                )
             return CompiledWhere(
                 f"EXISTS (SELECT 1 FROM {child} c "
                 "WHERE c.store_id = s.store_id AND c.value = ?)",
@@ -202,6 +219,36 @@ def _compile_condition(condition: FilterCondition) -> CompiledWhere:
             condition.column,
             operator,
         )
+        values = list(dict.fromkeys(values))
+        if condition.column == CATEGORY_COLUMN:
+            if operator in {"has_any", "has_none"}:
+                matches = " OR ".join(_category_match("c.value") for _ in values)
+                parameters = [
+                    parameter
+                    for selected in values
+                    for parameter in _category_parameters(selected)
+                ]
+                existence = "EXISTS" if operator == "has_any" else "NOT EXISTS"
+                return CompiledWhere(
+                    f"{existence} (SELECT 1 FROM {child} c "
+                    f"WHERE c.store_id = s.store_id AND ({matches}))",
+                    parameters,
+                )
+
+            # Each selected parent must have an exact or descendant category.
+            # Separate EXISTS clauses also handle overlapping selections, where
+            # one stored descendant can satisfy both a parent and a child path.
+            clauses: list[str] = []
+            parameters: list[str] = []
+            for selected in values:
+                match = _category_match("c.value")
+                clauses.append(
+                    f"EXISTS (SELECT 1 FROM {child} c "
+                    f"WHERE c.store_id = s.store_id AND {match})"
+                )
+                parameters.extend(_category_parameters(selected))
+            return CompiledWhere("(" + " AND ".join(clauses) + ")", parameters)
+
         placeholders = ", ".join("?" for _ in values)
         if operator == "has_any":
             sql = (
@@ -210,8 +257,6 @@ def _compile_condition(condition: FilterCondition) -> CompiledWhere:
             )
         else:
             # De-duplicate by value so parameters and required count agree.
-            values = list(dict.fromkeys(values))
-            placeholders = ", ".join("?" for _ in values)
             sql = (
                 f"(SELECT count(DISTINCT c.value) FROM {child} c "
                 f"WHERE c.store_id = s.store_id AND c.value IN ({placeholders})) "
@@ -571,6 +616,45 @@ class QueryService:
         search_pattern = f"%{_escape_like(search)}%" if search else None
         if definition.collection_table:
             child = _identifier(definition.collection_table)
+            if request.column == CATEGORY_COLUMN:
+                # Category paths form a hierarchy. Expand every stored leaf to
+                # its ancestor paths so facet counts use the same inclusive
+                # semantics as category filters.
+                if request.filters:
+                    source = f"{child} c JOIN stores s ON s.store_id = c.store_id"
+                    where_sql = where.sql
+                else:
+                    source = f"{child} c"
+                    where_sql = "TRUE"
+                search_sql = (
+                    "WHERE expanded.value ILIKE ? ESCAPE '\\'"
+                    if search_pattern
+                    else ""
+                )
+                sql = (
+                    "WITH expanded AS ("
+                    "SELECT c.store_id, unnest(list_transform("
+                    "range(2, array_length(string_split(c.value, '/')) + 1), "
+                    "i -> array_to_string(list_slice("
+                    "string_split(c.value, '/'), 1, i), '/')"
+                    ")) AS value "
+                    f"FROM {source} WHERE {where_sql}"
+                    ") "
+                    "SELECT expanded.value, count(DISTINCT expanded.store_id) AS count "
+                    f"FROM expanded {search_sql} GROUP BY expanded.value "
+                    "ORDER BY count DESC, expanded.value ASC LIMIT ?"
+                )
+                if search_pattern:
+                    parameters.append(search_pattern)
+                parameters.append(request.limit)
+                _, records = self._execute(sql, parameters)
+                return FacetResponse(
+                    column=request.column,
+                    values=[
+                        FacetValue(value=value, count=count)
+                        for value, count in records
+                    ],
+                )
             search_sql = " AND c.value ILIKE ? ESCAPE '\\'" if search_pattern else ""
             # Import guarantees one row per (store_id, value), so count(*) is
             # the distinct store count without an expensive hash-distinct over

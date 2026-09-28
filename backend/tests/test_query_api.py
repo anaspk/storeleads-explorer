@@ -29,12 +29,13 @@ def client(tmp_path: Path) -> TestClient:
                 rank BIGINT,
                 created DATE,
                 has_cms BOOLEAN,
-                technologies VARCHAR
+                technologies VARCHAR,
+                categories VARCHAR
             )
             """
         )
         connection.executemany(
-            "INSERT INTO stores VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO stores VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     UUID(int=1),
@@ -47,6 +48,7 @@ def client(tmp_path: Path) -> TestClient:
                     "2026-01-01",
                     True,
                     "WooCommerce:Klaviyo",
+                    "/Home & Garden:/Home & Garden/Decor",
                 ),
                 (
                     UUID(int=2),
@@ -59,6 +61,7 @@ def client(tmp_path: Path) -> TestClient:
                     "2026-01-02",
                     False,
                     "WooCommerce",
+                    "/Home & Garden/Furniture",
                 ),
                 (
                     UUID(int=3),
@@ -71,6 +74,7 @@ def client(tmp_path: Path) -> TestClient:
                     None,
                     None,
                     "Klaviyo",
+                    "/Home & Gardening",
                 ),
             ],
         )
@@ -85,6 +89,19 @@ def client(tmp_path: Path) -> TestClient:
                 (UUID(int=1), 2, "Klaviyo"),
                 (UUID(int=2), 1, "WooCommerce"),
                 (UUID(int=3), 1, "Klaviyo"),
+            ],
+        )
+        connection.execute(
+            "CREATE TABLE store_categories "
+            "(store_id UUID, ordinal INTEGER, value VARCHAR)"
+        )
+        connection.executemany(
+            "INSERT INTO store_categories VALUES (?, ?, ?)",
+            [
+                (UUID(int=1), 1, "/Home & Garden"),
+                (UUID(int=1), 2, "/Home & Garden/Decor"),
+                (UUID(int=2), 1, "/Home & Garden/Furniture"),
+                (UUID(int=3), 1, "/Home & Gardening"),
             ],
         )
     with TestClient(
@@ -117,6 +134,14 @@ def test_schema_is_complete_and_marks_collections(client: TestClient) -> None:
     assert columns["technologies"]["filter_operators"] == [
         "has",
         "has_any",
+        "has_all",
+        "is_null",
+        "is_not_null",
+    ]
+    assert columns["categories"]["filter_operators"] == [
+        "has",
+        "has_any",
+        "has_none",
         "has_all",
         "is_null",
         "is_not_null",
@@ -160,6 +185,73 @@ def test_nested_filters_projection_and_collection_membership(
         "next_cursor": None,
         "total_count": 2,
     }
+
+
+@pytest.mark.parametrize("operator", ["has", "has_any"])
+def test_category_filters_include_descendants_without_prefix_collisions(
+    client: TestClient, operator: str
+) -> None:
+    value: object = "/Home & Garden" if operator == "has" else ["/Home & Garden"]
+    response = client.post(
+        "/api/query",
+        json={
+            "columns": ["domain"],
+            "filters": [
+                {"column": "categories", "operator": operator, "value": value}
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rows"] == [
+        {"domain": "alpha.example"},
+        {"domain": "beta.example"},
+    ]
+    assert response.json()["total_count"] == 2
+
+
+def test_category_has_all_allows_one_descendant_to_satisfy_overlapping_paths(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/query",
+        json={
+            "columns": ["domain"],
+            "filters": [
+                {
+                    "column": "categories",
+                    "operator": "has_all",
+                    "value": ["/Home & Garden", "/Home & Garden/Decor"],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rows"] == [{"domain": "alpha.example"}]
+    assert response.json()["total_count"] == 1
+
+
+def test_category_has_none_excludes_any_selected_category_or_descendant(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/query",
+        json={
+            "columns": ["domain"],
+            "filters": [
+                {
+                    "column": "categories",
+                    "operator": "has_none",
+                    "value": ["/Home & Garden/Decor", "/Home & Gardening"],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rows"] == [{"domain": "beta.example"}]
+    assert response.json()["total_count"] == 1
 
 
 def test_cursor_pagination_is_stable_with_ties_and_hidden_sort(
@@ -359,6 +451,21 @@ def test_facets_support_case_insensitive_literal_search(client: TestClient) -> N
         {"value": "inactive", "count": 1},
     ]
     assert escaped_wildcard.json()["values"] == []
+
+
+def test_category_facets_count_descendant_membership(client: TestClient) -> None:
+    response = client.post(
+        "/api/facets",
+        json={"column": "categories", "search": "/Home & Garden", "limit": 10},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["values"] == [
+        {"value": "/Home & Garden", "count": 2},
+        {"value": "/Home & Garden/Decor", "count": 1},
+        {"value": "/Home & Garden/Furniture", "count": 1},
+        {"value": "/Home & Gardening", "count": 1},
+    ]
 
 
 def test_missing_database_is_a_structured_service_error(tmp_path: Path) -> None:

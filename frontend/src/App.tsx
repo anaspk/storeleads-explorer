@@ -41,7 +41,7 @@ const SAVED_VIEWS_KEY = "storeleads:saved-views:v1";
 const WORKSPACE_KEY = "storeleads:workspace:v1";
 const COLUMN_ORDER_KEY = "storeleads:column-order:v1";
 const NULL_OPERATORS = new Set(["is_null", "is_not_null"]);
-const LIST_OPERATORS = new Set(["in", "not_in", "between", "has_any", "has_all"]);
+const LIST_OPERATORS = new Set(["in", "not_in", "between", "has_any", "has_none", "has_all"]);
 
 type PaginationItem = number | "ellipsis";
 
@@ -59,7 +59,7 @@ const OPERATOR_LABELS: Record<string, string> = {
   not_in: "is none of", lt: "is less than", lte: "is at most",
   gt: "is greater than", gte: "is at least", between: "is between",
   is_null: "is empty", is_not_null: "is not empty", has: "has",
-  has_any: "has any of", has_all: "has all of",
+  has_any: "has any of", has_none: "has none of", has_all: "has all of",
 };
 
 type IconName = "columns" | "filter" | "save" | "export" | "close" | "search" | "chevron-down";
@@ -466,6 +466,41 @@ function FilterValue({ filter, column, onChange }: {
   return <input aria-label="Filter value" type={column.data_type === "date" && !isList ? "date" : numeric && !isList ? "number" : "text"} step={column.data_type === "integer" ? "1" : "any"} value={String(filter.value ?? "")} placeholder={isList ? "Comma-separated values" : column.data_type === "collection" ? "Value" : "Enter value"} onChange={(event) => onChange(event.target.value)} />;
 }
 
+const COLUMN_GROUPS = [
+  { id: "store", label: "Store details" },
+  { id: "location", label: "Location & contact" },
+  { id: "traffic", label: "Traffic & ranking" },
+  { id: "commerce", label: "Products & commerce" },
+  { id: "platform", label: "Platform, apps & theme" },
+  { id: "reviews", label: "Reviews & ratings" },
+  { id: "social", label: "Social media" },
+  { id: "channels", label: "Sales channels" },
+  { id: "pages", label: "Page URLs" },
+  { id: "other", label: "Other fields" },
+] as const;
+
+type ColumnGroupId = typeof COLUMN_GROUPS[number]["id"];
+
+const COLUMN_GROUP_NAMES: Partial<Record<ColumnGroupId, Set<string>>> = {
+  store: new Set(["store_id", "domain", "domain_url", "domain_tld1", "title", "description", "merchant_name", "status", "created", "language_code", "favicon_url", "open_graph_image_url", "aliases", "cluster_domains", "domain_count", "company_ids", "company_location", "tags"]),
+  location: new Set(["country_code", "region", "subregion", "state", "city", "street_address", "zip", "emails", "phones", "whatsapp", "whatsapp_url", "employee_count"]),
+  traffic: new Set(["rank", "rank_percentile", "platform_rank", "platform_rank_percentile", "common_crawl_centrality", "common_crawl_pagerank", "estimated_monthly_pageviews", "estimated_monthly_visits"]),
+  commerce: new Set(["categories", "currency", "estimated_monthly_sales", "estimated_yearly_sales", "products_sold", "product_images", "product_images_created_30", "product_images_created_90", "product_images_created_365", "product_variants", "products_created_30", "products_created_90", "products_created_365", "product_to_vendor", "shipping_carriers"]),
+  platform: new Set(["platform", "platform_version", "last_platform", "last_platform_changed", "has_cms", "headless", "technologies", "technologies_count", "features", "installed_apps", "installed_apps_names", "installed_apps_count", "android_app_id", "ios_app_id", "last_plan", "last_plan_changed", "theme", "theme_style", "theme_vendor", "last_theme", "last_theme_changed", "theme_change_30", "theme_change_90"]),
+};
+
+function columnGroupFor(name: string): ColumnGroupId {
+  for (const group of COLUMN_GROUPS) {
+    if (COLUMN_GROUP_NAMES[group.id]?.has(name)) return group.id;
+  }
+  if (/(_avgrating|_reviews)$/.test(name) || name === "combined_reviews") return "reviews";
+  if (/^(facebook|instagram|linkedin|pinterest|tiktok|twitter|youtube|combined_followers)/.test(name)) return "social";
+  if (name === "sales_channels" || name.startsWith("sales_channel_")) return "channels";
+  if (name.startsWith("estimated_monthly_sales_") || name.startsWith("estimated_yearly_sales_")) return "commerce";
+  if (name.endsWith("_url")) return "pages";
+  return "other";
+}
+
 function ColumnChooser({ columns, selected, onChange, onClose }: {
   columns: SchemaColumn[];
   selected: string[];
@@ -473,15 +508,47 @@ function ColumnChooser({ columns, selected, onChange, onClose }: {
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
-  const visible = columns.filter((column) => `${column.label} ${column.name}`.toLowerCase().includes(search.toLowerCase()));
+  const [expanded, setExpanded] = useState<Set<ColumnGroupId>>(() => new Set(["store"]));
+  const normalizedSearch = search.trim().toLowerCase();
+  const groupedColumns = useMemo(() => COLUMN_GROUPS.map((group) => ({
+    ...group,
+    columns: columns.filter((column) => columnGroupFor(column.name) === group.id),
+  })).filter((group) => group.columns.length > 0), [columns]);
   const toggle = (name: string) => {
     if (selected.includes(name) && selected.length === 1) return;
     onChange(selected.includes(name) ? selected.filter((item) => item !== name) : [...selected, name]);
   };
-  return <div className="popover columns-popover">
-    <div className="popover-title"><div><strong>Visible columns</strong><span>{selected.length} of {columns.length} selected</span></div><button className="icon-button" onClick={onClose} aria-label="Close column chooser"><Icon name="close" /></button></div>
-    <label className="search-field"><Icon name="search" /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search 150 fields…" /></label>
-    <div className="column-list">{visible.map((column) => <label key={column.name} className="check-row"><input type="checkbox" checked={selected.includes(column.name)} onChange={() => toggle(column.name)} /><span><b>{column.label}</b><small>{column.data_type}</small></span></label>)}</div>
+  const toggleGroup = (id: ColumnGroupId) => setExpanded((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const matchingGroups = groupedColumns.map((group) => ({
+    ...group,
+    columns: normalizedSearch
+      ? group.columns.filter((column) => `${column.label} ${column.name}`.toLowerCase().includes(normalizedSearch))
+      : group.columns,
+  })).filter((group) => group.columns.length > 0);
+  const matchCount = matchingGroups.reduce((total, group) => total + group.columns.length, 0);
+
+  return <div className="popover columns-popover" role="dialog" aria-label="Choose visible columns">
+    <div className="popover-title"><div><strong>Columns</strong><span>{selected.length} of {columns.length} selected</span></div><button className="icon-button" onClick={onClose} aria-label="Close column chooser"><Icon name="close" /></button></div>
+    <p className="columns-help">Choose the fields displayed in the table. New columns are added on the right.</p>
+    <label className="search-field"><Icon name="search" /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${columns.length} fields…`} /></label>
+    <div className="column-groups">
+      {matchingGroups.map((group) => {
+        const isOpen = normalizedSearch.length > 0 || expanded.has(group.id);
+        const selectedCount = group.columns.filter((column) => selected.includes(column.name)).length;
+        const panelId = `column-group-${group.id}`;
+        return <section className={`column-group ${isOpen ? "is-open" : ""}`} key={group.id}>
+          <button type="button" className="column-group-trigger" aria-expanded={isOpen} aria-controls={panelId} onClick={() => !normalizedSearch && toggleGroup(group.id)}>
+            <Icon name="chevron-down" /><span>{group.label}</span><small>{selectedCount} / {group.columns.length}</small>
+          </button>
+          {isOpen && <div className="column-group-grid" id={panelId}>{group.columns.map((column) => <label key={column.name} className="check-row"><input type="checkbox" checked={selected.includes(column.name)} disabled={selected.includes(column.name) && selected.length === 1} onChange={() => toggle(column.name)} /><span><b>{column.label}</b><small>{column.data_type}</small></span></label>)}</div>}
+        </section>;
+      })}
+      {normalizedSearch && matchCount === 0 && <div className="column-no-results"><strong>No columns found</strong><span>Try a field name such as country, sales, or Instagram.</span></div>}
+    </div>
     <div className="popover-actions"><button className="button button--primary" onClick={onClose}>Done</button></div>
   </div>;
 }
