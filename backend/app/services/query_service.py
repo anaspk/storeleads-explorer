@@ -28,6 +28,7 @@ from app.models.query import (
     QueryRequest,
     QueryResponse,
     SortSpec,
+    StoreDetailResponse,
 )
 from app.services.schema_registry import DEFAULT_COLUMNS, SCHEMA_REGISTRY
 
@@ -602,6 +603,67 @@ class QueryService:
         ]
         return QueryResponse(
             rows=rows, next_cursor=next_cursor, total_count=total_count
+        )
+
+    def store_detail(self, store_id: UUID) -> StoreDetailResponse:
+        _, records = self._execute(
+            "SELECT to_json(s) FROM stores s WHERE s.store_id = ? LIMIT 1",
+            [store_id],
+        )
+        if not records:
+            raise QueryAPIError(
+                "store_not_found",
+                "The requested store does not exist",
+                status_code=404,
+                details={"store_id": str(store_id)},
+            )
+
+        raw_fields = records[0][0]
+        fields = json.loads(raw_fields) if isinstance(raw_fields, str) else raw_fields
+        fields.pop("store_id", None)
+
+        collection_definitions = [
+            definition
+            for definition in SCHEMA_REGISTRY.values()
+            if definition.collection_table
+        ]
+        table_names = [
+            definition.collection_table for definition in collection_definitions
+        ]
+        placeholders = ", ".join("?" for _ in table_names)
+        _, table_records = self._execute(
+            "SELECT table_name FROM information_schema.tables "
+            f"WHERE table_schema = 'main' AND table_name IN ({placeholders})",
+            table_names,
+        )
+        available_tables = {record[0] for record in table_records}
+        available_collections = [
+            definition
+            for definition in collection_definitions
+            if definition.collection_table in available_tables
+        ]
+        collections: dict[str, list[str]] = {
+            definition.name: [] for definition in collection_definitions
+        }
+        if available_collections:
+            parts = [
+                "SELECT "
+                f"'{definition.name}' AS collection_name, ordinal, value "
+                f"FROM {_identifier(definition.collection_table or '')} "
+                "WHERE store_id = ?"
+                for definition in available_collections
+            ]
+            _, collection_records = self._execute(
+                " UNION ALL ".join(parts) + " ORDER BY collection_name, ordinal",
+                [store_id] * len(parts),
+            )
+            for collection_name, _ordinal, value in collection_records:
+                collections[collection_name].append(value)
+
+        return StoreDetailResponse(
+            store_id=store_id,
+            fields=fields,
+            collections=collections,
         )
 
     def facets(self, request: FacetRequest) -> FacetResponse:

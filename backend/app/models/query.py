@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,6 +46,12 @@ class QueryResponse(APIModel):
     rows: list[dict[str, Any]]
     next_cursor: str | None
     total_count: int
+
+
+class StoreDetailResponse(APIModel):
+    store_id: UUID
+    fields: dict[str, Any]
+    collections: dict[str, list[str]]
 
 
 class FacetRequest(APIModel):

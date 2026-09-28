@@ -152,6 +152,52 @@ def test_default_timeout_allows_known_cold_query_workloads() -> None:
     assert DEFAULT_TIMEOUT_SECONDS >= 30
 
 
+def test_store_detail_returns_fields_and_normalized_collections(
+    client: TestClient,
+) -> None:
+    store_id = str(UUID(int=1))
+
+    response = client.get(f"/api/stores/{store_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "store_id": store_id,
+        "fields": {
+            "domain": "alpha.example",
+            "title": "Alpha",
+            "country_code": "US",
+            "status": "active",
+            "estimated_monthly_visits": 100,
+            "rank": 1,
+            "created": "2026-01-01",
+            "has_cms": True,
+            "technologies": "WooCommerce:Klaviyo",
+            "categories": "/Home & Garden:/Home & Garden/Decor",
+        },
+        "collections": {
+            "aliases": [],
+            "categories": ["/Home & Garden", "/Home & Garden/Decor"],
+            "cluster_domains": [],
+            "emails": [],
+            "features": [],
+            "installed_apps": [],
+            "installed_apps_names": [],
+            "phones": [],
+            "sales_channels": [],
+            "shipping_carriers": [],
+            "tags": [],
+            "technologies": ["WooCommerce", "Klaviyo"],
+        },
+    }
+
+
+def test_store_detail_returns_not_found(client: TestClient) -> None:
+    response = client.get(f"/api/stores/{UUID(int=99)}")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "store_not_found"
+
+
 def test_nested_filters_projection_and_collection_membership(
     client: TestClient,
 ) -> None:

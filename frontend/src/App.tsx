@@ -20,6 +20,7 @@ import {
 
 import { cancelExport, createExport, getExport, getFacet, getSchema, queryStores } from "./api";
 import { COUNTRIES, COUNTRY_BY_CODE } from "./countries";
+import { StorePreview } from "./StorePreview";
 import type {
   ExplorerView,
   ExportJob,
@@ -719,6 +720,10 @@ export function App() {
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(() => {
+    const value = new URLSearchParams(window.location.hash.slice(1)).get("store");
+    return value || null;
+  });
   const tableScrollRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -778,9 +783,13 @@ export function App() {
   const currentCursor = pageCursors[currentPage];
   const canUseCursor = currentCursor !== undefined;
   const queryEnabled = selectedColumns.length > 0 && columns.length > 0;
+  const queryColumns = useMemo(
+    () => selectedColumns.includes("store_id") ? selectedColumns : [...selectedColumns, "store_id"],
+    [selectedColumns],
+  );
   const storesQuery = useQuery({
-    queryKey: ["stores", selectedColumns, readyFilters, sort, pageSize, currentPage, currentCursor],
-    queryFn: () => queryStores({ columns: selectedColumns, filters: readyFilters, sort, limit: pageSize, cursor: currentCursor ?? null, offset: canUseCursor ? 0 : (currentPage - 1) * pageSize }),
+    queryKey: ["stores", queryColumns, readyFilters, sort, pageSize, currentPage, currentCursor],
+    queryFn: () => queryStores({ columns: queryColumns, filters: readyFilters, sort, limit: pageSize, cursor: currentCursor ?? null, offset: canUseCursor ? 0 : (currentPage - 1) * pageSize }),
     enabled: queryEnabled,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
@@ -822,7 +831,18 @@ export function App() {
 
   const tableColumns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => selectedColumns.map((name) => {
     const meta = columns.find((column) => column.name === name)!;
-    return { accessorKey: name, header: meta.label, size: initialColumnWidth(meta.label), cell: (context) => <span className={context.getValue() == null ? "null-value" : ""}>{formatCell(context.getValue(), meta.data_type)}</span>, enableSorting: meta.sortable };
+    return {
+      accessorKey: name,
+      header: meta.label,
+      size: initialColumnWidth(meta.label),
+      cell: (context) => <button
+        type="button"
+        className={`table-cell-trigger ${context.getValue() == null ? "null-value" : ""}`}
+        onClick={() => openStore(String(context.row.original.store_id))}
+        aria-label={`Open preview for ${String(context.row.original.domain ?? "store")}`}
+      >{formatCell(context.getValue(), meta.data_type)}</button>,
+      enableSorting: meta.sortable,
+    };
   }), [columns, selectedColumns]);
   const sorting: SortingState = sort.map((item) => ({ id: item.column, desc: item.direction === "desc" }));
   const table = useReactTable({
@@ -874,6 +894,19 @@ export function App() {
     setSavedViews(next); localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(next));
   };
 
+  function openStore(storeId: string) {
+    setSelectedStoreId(storeId);
+    const url = new URL(window.location.href);
+    url.hash = new URLSearchParams({ store: storeId }).toString();
+    window.history.replaceState(null, "", url);
+  }
+  function closeStore() {
+    setSelectedStoreId(null);
+    const url = new URL(window.location.href);
+    url.hash = "";
+    window.history.replaceState(null, "", url);
+  }
+
   if (schemaQuery.isPending) return <main className="state-page"><div className="loader"/><p>Opening your data workspace…</p></main>;
   if (schemaQuery.isError) return <main className="state-page"><span className="error-mark">!</span><h1>Couldn’t reach the data service</h1><p>{schemaQuery.error.message}</p><button className="button button--primary" onClick={() => void schemaQuery.refetch()}>Try again</button></main>;
 
@@ -899,5 +932,6 @@ export function App() {
     </main>
     {showSave && <Modal title="Save this view" onClose={() => setShowSave(false)}><p className="modal-copy">Save the {selectedColumns.length} visible columns, {filterCount} filters, grouped logic, sorting, and page size in this browser.</p><label className="field-label">View name<input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveView()} placeholder="e.g. High-traffic US stores" /></label>{savedViews.length > 0 && <div className="saved-list"><span>Saved views</span>{savedViews.map((view) => <div key={view.name}><button className="saved-name" onClick={() => { restoreView(view); setShowSave(false); }}>{view.name}</button><button className="icon-button" onClick={() => deleteView(view.name)} aria-label={`Delete ${view.name}`}><Icon name="close" /></button></div>)}</div>}<div className="modal-actions"><button className="button button--quiet" onClick={() => setShowSave(false)}>Cancel</button><button className="button button--primary" disabled={!viewName.trim()} onClick={saveView}>Save view</button></div></Modal>}
     {showExport && <ExportModal columns={columns} selectedColumns={selectedColumns} filters={readyFilters} filterCount={filterCount} sort={sort} exportJobId={exportJobId} setExportJobId={setExportJobId} onClose={() => setShowExport(false)} />}
+    {selectedStoreId && <StorePreview storeId={selectedStoreId} onClose={closeStore} />}
   </div>;
 }

@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import FileResponse
@@ -12,6 +13,7 @@ from app.models.query import (
     QueryRequest,
     QueryResponse,
     SchemaResponse,
+    StoreDetailResponse,
 )
 from app.services.query_service import QueryService
 from app.services.schema_registry import PUBLIC_SCHEMA
@@ -41,6 +43,13 @@ def schema() -> dict[str, object]:
 @api_router.post("/query", response_model=QueryResponse, tags=["data"])
 def query(payload: QueryRequest, request: Request) -> QueryResponse:
     return _service(request).query(payload)
+
+
+@api_router.get(
+    "/stores/{store_id}", response_model=StoreDetailResponse, tags=["data"]
+)
+def store_detail(store_id: UUID, request: Request) -> StoreDetailResponse:
+    return _service(request).store_detail(store_id)
 
 
 @api_router.post("/facets", response_model=FacetResponse, tags=["data"])

@@ -65,6 +65,12 @@ export type QueryResponse = {
   total_count: number;
 };
 
+export type StoreDetail = {
+  store_id: string;
+  fields: Record<string, unknown>;
+  collections: Record<string, string[]>;
+};
+
 export type ExportRequest = Pick<QueryRequest, "columns" | "filters" | "sort">;
 export type ExportStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
